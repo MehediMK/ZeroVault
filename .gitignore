@@ -1,0 +1,9 @@
+# Never commit vault files
+*.vault.json
+vault*.json
+*.encrypted.json
+
+# OS / tooling
+.DS_Store
+node_modules/
+dist/

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- Strong baseline CSP (no inline JS) -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="
+        default-src 'self';
+        script-src 'self';
+        style-src 'self';
+        img-src 'self' data:;
+        object-src 'none';
+        base-uri 'none';
+        frame-ancestors 'none';
+        form-action 'self';
+        upgrade-insecure-requests;
+      "
+    />
+
+    <title>Client-side Password Vault</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="header">
+      <h1>Client-side Password Vault</h1>
+      <div class="header-actions">
+        <button id="lockBtn" class="secondary" disabled>Lock</button>
+      </div>
+    </header>
+
+    <main class="container" id="app"></main>
+
+    <footer class="footer">
+      <small>
+        Offline-capable. No servers. No storage. Download your encrypted vault JSON after changes.
+      </small>
+    </footer>
+
+    <script type="module" src="src/app.js"></script>
+  </body>
+</html>
