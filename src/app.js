@@ -156,10 +156,15 @@ function renderOpenScreen() {
         <label>Upload encrypted vault JSON</label>
         <input id="ov_file" type="file" accept="application/json" />
       </div>
+    <div class="row">
       <div>
         <label>Master Password</label>
         <input id="ov_pw" type="password" autocomplete="current-password" />
       </div>
+    </div>
+    <div class="row" style="margin-top: 10px; align-items: center; justify-content: flex-start; gap: 8px;">
+      <input type="checkbox" id="ov_readonly" style="width: auto;" />
+      <label for="ov_readonly" style="display:inline; cursor:pointer; margin:0;">Open in Emergency Read-Only Mode</label>
     </div>
     <div class="actions">
       <button id="ov_open">Open Vault</button>
@@ -187,8 +192,10 @@ function renderOpenScreen() {
       const obj = await readJsonFile(file);
       const { meta, data } = await openEncryptedVaultFile(obj, pw);
 
+      const isReadOnly = wrap.querySelector("#ov_readonly").checked;
       state.fileNameHint = file.name || "vault.json";
       setUnlocked(meta, data);
+      state.readOnly = isReadOnly;
 
       updateLockButton();
       render(appRoot, handlers);
@@ -257,7 +264,15 @@ const handlers = {
     appRoot.appendChild(renderOpenScreen());
   },
 
+  onSwitchReadOnly: () => {
+    state.readOnly = true;
+    render(appRoot, handlers);
+    renderEditor(selectedEntryId ? getEntryById(selectedEntryId) : null, handlers);
+    toast("Switched to Emergency Read-Only Mode.");
+  },
+
   onAddEntry: () => {
+    if (state.readOnly) return toast("Action disabled in Emergency Read-Only Mode", true);
     const v = state.vaultData;
     if (!v) return;
     const now = new Date().toISOString();
@@ -292,6 +307,7 @@ const handlers = {
   },
 
   onSaveEntry: (id) => {
+    if (state.readOnly) return toast("Action disabled in Emergency Read-Only Mode", true);
     const e = getEntryById(id);
     if (!e) return;
 
@@ -304,6 +320,7 @@ const handlers = {
   },
 
   onDeleteEntry: (id) => {
+    if (state.readOnly) return toast("Action disabled in Emergency Read-Only Mode", true);
     const v = state.vaultData;
     if (!v) return;
     v.entries = v.entries.filter((x) => x.id !== id);
@@ -317,11 +334,13 @@ const handlers = {
     const e = getEntryById(id);
     if (!e) return;
 
+    if (state.readOnly) return toast("Clipboard disabled in Emergency Read-Only Mode", true);
+
     try {
       await navigator.clipboard.writeText(e.password || "");
       toast("Copied password to clipboard.");
       setTimeout(async () => {
-        try { await navigator.clipboard.writeText(""); } catch {}
+        try { await navigator.clipboard.writeText(""); } catch { }
       }, 20000);
     } catch {
       toast("Clipboard copy failed (browser permission).", true);
@@ -330,6 +349,7 @@ const handlers = {
   },
 
   onSaveDownload: async () => {
+    if (state.readOnly) return toast("Action disabled in Emergency Read-Only Mode", true);
     if (!state.vaultData) return;
 
     const master = prompt("Enter master password to re-encrypt and download:");

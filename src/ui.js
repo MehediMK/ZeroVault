@@ -45,15 +45,26 @@ function renderLocked(handlers) {
 
 function renderUnlocked(handlers) {
   const { vaultData } = state;
+
+  const banner = state.readOnly
+    ? el("div", { class: "card", style: "border-left: 5px solid orange; background: #fff8e1; color: #b7791f;" }, [
+      el("strong", { text: "Emergency Read-Only Mode: " }),
+      el("span", { text: "Editing & Clipboard are disabled." })
+    ])
+    : null;
+
+  const actions = [
+    !state.readOnly ? el("button", { text: "Add Entry", onclick: handlers.onAddEntry }) : null,
+    !state.readOnly ? el("button", { class: "secondary", text: "Save & Download Vault JSON", onclick: handlers.onSaveDownload }) : null,
+    !state.readOnly ? el("button", { class: "secondary", text: "Switch to Read-Only", onclick: handlers.onSwitchReadOnly }) : null,
+  ].filter(Boolean);
+
   const top = el("div", { class: "card" }, [
     el("div", { class: "inline" }, [
       el("span", { class: "badge", text: `Unlocked: ${vaultData.vaultName || "Vault"}` }),
       el("span", { class: "small", text: `Entries: ${vaultData.entries?.length ?? 0}` }),
     ]),
-    el("div", { class: "actions" }, [
-      el("button", { text: "Add Entry", onclick: handlers.onAddEntry }),
-      el("button", { class: "secondary", text: "Save & Download Vault JSON", onclick: handlers.onSaveDownload }),
-    ]),
+    el("div", { class: "actions" }, actions),
   ]);
 
   const searchRow = el("div", { class: "card" }, [
@@ -81,11 +92,11 @@ function renderUnlocked(handlers) {
 
   const editor = el("div", { class: "card" }, [
     el("h3", { text: "Entry Editor" }),
-    el("p", { class: "small", text: "Select an entry to edit, or click “Add Entry”." }),
+    el("p", { class: "small", text: "Select an entry to view details." }),
     el("div", { id: "editorHost" }),
   ]);
 
-  return el("div", {}, [top, searchRow, tableCard, editor]);
+  return el("div", {}, [banner, top, searchRow, tableCard, editor].filter(Boolean));
 }
 
 function renderEntriesTable(handlers) {
@@ -105,10 +116,10 @@ function renderEntriesTable(handlers) {
   const tbody = el("tbody");
   for (const e of entries) {
     const actions = el("div", { class: "inline" }, [
-      el("button", { class: "secondary", text: "Edit", onclick: () => handlers.onEditEntry(e.id) }),
-      el("button", { class: "secondary", text: "Copy Password", onclick: () => handlers.onCopyPassword(e.id) }),
-      el("button", { class: "danger", text: "Delete", onclick: () => handlers.onDeleteEntry(e.id) }),
-    ]);
+      el("button", { class: "secondary", text: state.readOnly ? "View" : "Edit", onclick: () => handlers.onEditEntry(e.id) }),
+      !state.readOnly ? el("button", { class: "secondary", text: "Copy Password", onclick: () => handlers.onCopyPassword(e.id) }) : null,
+      !state.readOnly ? el("button", { class: "danger", text: "Delete", onclick: () => handlers.onDeleteEntry(e.id) }) : null,
+    ].filter(Boolean));
 
     tbody.appendChild(
       el("tr", {}, [
@@ -138,43 +149,51 @@ export function renderEditor(entryOrNull, handlers) {
 
   const e = entryOrNull;
 
+  const isRO = state.readOnly;
+  const inputAttrs = (base) => {
+    if (isRO) base.disabled = "true";
+    return base;
+  };
+
   const form = el("div", {}, [
     el("div", { class: "row" }, [
       el("div", {}, [
         el("label", { text: "Title" }),
-        el("input", { id: "f_title", type: "text", value: e.title || "", autocomplete: "off" }),
+        el("input", inputAttrs({ id: "f_title", type: "text", value: e.title || "", autocomplete: "off" })),
       ]),
       el("div", {}, [
         el("label", { text: "URL" }),
-        el("input", { id: "f_url", type: "text", value: e.url || "", autocomplete: "off" }),
+        el("input", inputAttrs({ id: "f_url", type: "text", value: e.url || "", autocomplete: "off" })),
       ]),
     ]),
     el("div", { class: "row" }, [
       el("div", {}, [
         el("label", { text: "Username / Email" }),
-        el("input", { id: "f_username", type: "text", value: e.username || "", autocomplete: "off" }),
+        el("input", inputAttrs({ id: "f_username", type: "text", value: e.username || "", autocomplete: "off" })),
       ]),
       el("div", {}, [
         el("label", { text: "Password" }),
-        el("input", { id: "f_password", type: "password", value: e.password || "", autocomplete: "new-password" }),
+        el("input", inputAttrs({ id: "f_password", type: "password", value: e.password || "", autocomplete: "new-password" })),
       ]),
     ]),
     el("div", { class: "row" }, [
       el("div", {}, [
         el("label", { text: "Tags (comma-separated)" }),
-        el("input", { id: "f_tags", type: "text", value: (e.tags || []).join(", "), autocomplete: "off" }),
+        el("input", inputAttrs({ id: "f_tags", type: "text", value: (e.tags || []).join(", "), autocomplete: "off" })),
       ]),
       el("div", {}, [
         el("label", { text: "Notes" }),
-        el("textarea", { id: "f_notes", autocomplete: "off" }, []),
+        el("textarea", inputAttrs({ id: "f_notes", autocomplete: "off" }), []),
       ]),
     ]),
     el("div", { class: "actions" }, [
-      el("button", { text: "Save Entry", onclick: () => handlers.onSaveEntry(e.id) }),
-      el("button", { class: "secondary", text: "Cancel", onclick: handlers.onCancelEdit }),
-    ]),
+      !isRO ? el("button", { text: "Save Entry", onclick: () => handlers.onSaveEntry(e.id) }) : null,
+      el("button", { class: "secondary", text: isRO ? "Close" : "Cancel", onclick: handlers.onCancelEdit }),
+    ].filter(Boolean)),
     el("div", { class: "hr" }),
-    el("p", { class: "small", text: "Remember: changes are only stored after “Save & Download Vault JSON”." }),
+    !isRO
+      ? el("p", { class: "small", text: "Remember: changes are only stored after “Save & Download Vault JSON”." })
+      : el("p", { class: "small", text: "Read-only mode enabled." }),
   ]);
 
   host.appendChild(form);
