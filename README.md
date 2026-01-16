@@ -1,64 +1,70 @@
-# ZeroVault — Client-side Password Vault (Encrypted JSON)
+# ZeroVault 🔐  
+### Offline Client-Side Password Manager (Encrypted JSON)
 
-ZeroVault is a **client-only** password vault web app:
-- **No backend**
-- **No database**
-- **No browser storage** (no localStorage, IndexedDB, cookies)
-- Your secrets live only in an **encrypted JSON file** that you download and keep.
+**ZeroVault** is a **secure, offline, client-side password manager** that runs entirely in your browser.  
+All credentials are encrypted locally and stored only in a **user-controlled encrypted JSON file**.
 
-This repository hosts **only application code** (safe for GitHub Pages).  
-**Vault files must never be committed.**
+> ✅ No servers  
+> ✅ No cloud  
+> ✅ No tracking  
+> ✅ No browser storage  
+> ✅ Works fully offline once loaded  
+
+This repository contains **only frontend code** and is safe to host on **GitHub Pages**.
 
 ---
 
-## ✅ How it works
+## 🚀 Live Demo
+👉 https://mehedimk.github.io/ZeroVault/
 
-### Create a new vault
+*(Replace with your real GitHub Pages URL)*
+
+---
+
+## 🧠 What makes ZeroVault different?
+
+Unlike traditional password managers, ZeroVault follows a **zero-trust architecture**:
+
+- GitHub hosts **only UI + logic**
+- Your passwords never leave your device
+- You keep and manage your encrypted vault file yourself
+- No account, no sync, no telemetry
+
+ZeroVault is ideal if you want:
+- a **portable password vault**
+- a **cloud-free password manager**
+- a **transparent, auditable security model**
+
+---
+
+## 🔐 How ZeroVault works
+
+### 1️⃣ Create a new vault
 1. Open the app
 2. Click **Create New Vault**
-3. Set a **Master Password**
-4. Download the generated encrypted JSON file (example: `my.vault.json`)
+3. Set a **master password**
+4. Download the generated encrypted JSON file  
+   (example: `my.vault.json`)
 
-### Open existing vault
+### 2️⃣ Open an existing vault
 1. Click **Open Existing Vault**
 2. Upload your encrypted JSON file
-3. Enter the master password
-4. The vault decrypts **in memory only**
+3. Enter your master password
+4. Vault decrypts **only in memory**
 
-### Update vault
-1. Add/Edit/Delete entries
+### 3️⃣ Update the vault
+1. Add / edit / delete entries
 2. Click **Save & Download Vault JSON**
-3. The app re-encrypts the full dataset and downloads a new JSON file
+3. A **new encrypted file** is generated
 
----
-
-## 🔐 Security model
-
-- Master password is **never stored** and **never written** to the JSON file.
-- Key is derived from the master password using **PBKDF2 (SHA-256) + Salt**.
-- Vault data is encrypted using **AES-GCM** (authenticated encryption).
-- If the password is wrong or the file is modified, decryption fails.
-
-### Data is never:
-- sent to any server
-- stored in localStorage / IndexedDB / cookies
-- logged to console
-
-### Data exists only:
-- in memory, during an unlocked session
-
-> Note: JavaScript can’t guarantee perfect memory wiping due to garbage collection, but ZeroVault clears references and overwrites fields where practical.
+> ⚠️ Important: Changes are saved only when you download the updated vault file.
 
 ---
 
 ## 🧾 Vault file format (v1)
 
-Vault JSON contains:
-- `version`
-- `crypto` metadata (kdf, iterations, salt, iv, cipher)
-- `encryptedData` (base64)
+The vault file contains **no plaintext secrets**.
 
-Example:
 ```json
 {
   "version": 1,
