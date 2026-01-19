@@ -15,6 +15,7 @@ const lockBtn = document.getElementById("lockBtn");
 // In-memory only; user must re-enter master password to save (by design).
 let selectedEntryId = null;
 let visibleFilter = { q: "", tag: "" };
+let visiblePasswords = new Set();
 
 // Minimal UX routing: locked screens
 let mode = "home"; // home | create | open
@@ -30,6 +31,7 @@ function updateLockButton() {
 function lockNow() {
   selectedEntryId = null;
   visibleFilter = { q: "", tag: "" };
+  visiblePasswords.clear();
   wipeSensitive();
   mode = "home";
   transient = { fileObj: null, fileName: "vault.json" };
@@ -376,7 +378,7 @@ const handlers = {
     if (q) {
       const qq = q.toLowerCase();
       out = out.filter((e) => {
-        const hay = [e.title, e.url, e.username, e.notes, ...(e.tags || [])].join(" ").toLowerCase();
+        const hay = [e.title, e.url, e.username, e.notes, e.password, ...(e.tags || [])].join(" ").toLowerCase();
         return hay.includes(qq);
       });
     }
@@ -400,6 +402,18 @@ const handlers = {
     renderEditor(selectedEntryId ? getEntryById(selectedEntryId) : null, handlers);
     armInactivity();
   },
+
+  onTogglePassword: (id) => {
+    if (visiblePasswords.has(id)) {
+      visiblePasswords.delete(id);
+    } else {
+      visiblePasswords.add(id);
+    }
+    render(appRoot, handlers);
+    armInactivity();
+  },
+
+  isPasswordVisible: (id) => visiblePasswords.has(id),
 };
 
 /** ✅ Now do initial render */

@@ -109,6 +109,7 @@ function renderEntriesTable(handlers) {
       el("th", { text: "URL" }),
       el("th", { text: "Username" }),
       el("th", { text: "Tags" }),
+      el("th", { text: "Password" }),
       el("th", { text: "Actions" }),
     ]),
   ]);
@@ -127,6 +128,17 @@ function renderEntriesTable(handlers) {
         el("td", { text: e.url || "" }),
         el("td", { text: e.username || "" }),
         el("td", { text: (e.tags || []).join(", ") }),
+        el("td", {}, [
+          el("div", { style: "display: flex; align-items: center; gap: 8px;" }, [
+            el("span", { text: handlers.isPasswordVisible(e.id) ? (e.password || "") : "••••••••" }),
+            el("button", {
+              class: "small secondary",
+              style: "padding: 2px 6px; min-width: auto;",
+              text: handlers.isPasswordVisible(e.id) ? "🙈" : "👁️",
+              onclick: () => handlers.onTogglePassword(e.id)
+            })
+          ])
+        ]),
         el("td", {}, [actions]),
       ])
     );
