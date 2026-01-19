@@ -259,6 +259,28 @@ export function renderEditor(entryOrNull, handlers) {
       el("div", {}, [
         el("label", { text: "Password" }),
         el("input", inputAttrs({ id: "f_password", type: "password", value: e.password || "", autocomplete: "new-password" })),
+
+        // Visual Password Timeline
+        e.updatedAt ? el("div", { style: "margin-top: 8px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px; font-size: 0.85rem;" }, [
+          el("div", { style: "display:flex; justify-content:space-between; margin-bottom:5px;" }, [
+            el("span", { text: "Time since update:", style: "color:var(--muted);" }),
+            el("span", { text: timeAgo(e.updatedAt), style: "font-weight:600; color:var(--text);" })
+          ]),
+          el("div", { style: "height: 6px; background: #333; border-radius: 3px; overflow: hidden; position: relative;" }, [
+            el("div", {
+              style: `
+                    width: ${Math.min(100, (new Date() - new Date(e.updatedAt)) / (1000 * 60 * 60 * 24 * 365) * 100)}%; 
+                    height: 100%; 
+                    background: linear-gradient(90deg, #5cffb0, #ff5c7a);
+                    opacity: 0.7;
+                 `})
+          ]),
+          el("div", { class: "small", style: "margin-top:4px; text-align:right;" }, [
+            el("span", { text: "Secure" }),
+            el("span", { text: " • ", style: "margin:0 4px;" }),
+            el("span", { text: "Review needed", style: "color:var(--danger);" })
+          ])
+        ]) : null
       ]),
     ]),
     el("div", { class: "row" }, [
