@@ -60,8 +60,11 @@ function armInactivity() {
 });
 
 document.addEventListener("visibilitychange", () => {
-  // optional strict behavior: lock when tab hidden
-  if (document.hidden && isUnlocked()) lockNow();
+  // Relaxed behavior: rely on the standard inactivity timer (e.g. 2 mins)
+  // instead of locking immediately when the tab is hidden.
+  if (!document.hidden && isUnlocked()) {
+    armInactivity();
+  }
 });
 
 function getEntryById(id) {
