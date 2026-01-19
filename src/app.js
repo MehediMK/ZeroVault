@@ -497,6 +497,7 @@ const handlers = {
       createdAt: now,
       updatedAt: now,
     });
+    if (state.changeLog) state.changeLog.added++;
     selectedEntryId = id;
     render(appRoot, handlers);
     renderEditor(getEntryById(id), handlers);
@@ -543,6 +544,7 @@ const handlers = {
       });
       // Limit history to last 10 versions to save space
       if (e.history.length > 10) e.history.length = 10;
+      if (state.changeLog) state.changeLog.edited++;
     }
 
     Object.assign(e, vals, { updatedAt: new Date().toISOString() });
@@ -639,6 +641,7 @@ const handlers = {
     const v = state.vaultData;
     if (!v) return;
     v.entries = v.entries.filter((x) => x.id !== id);
+    if (state.changeLog) state.changeLog.deleted++;
     deletingEntryIds.delete(id);
     if (selectedEntryId === id) selectedEntryId = null;
     render(appRoot, handlers);
@@ -652,6 +655,7 @@ const handlers = {
     if (e) {
       e.archived = true;
       e.updatedAt = new Date().toISOString();
+      if (state.changeLog) state.changeLog.archived++;
       toast("Entry archived.");
 
       // Auto-move selection if keyboard nav active
@@ -701,6 +705,23 @@ const handlers = {
   onSaveDownload: async () => {
     if (state.readOnly) return toast("Action disabled in Emergency Read-Only Mode", true);
     if (!state.vaultData) return;
+
+    if (!state.vaultData) return;
+
+    if (state.changeLog) {
+      const { added, edited, deleted, archived } = state.changeLog;
+      const total = added + edited + deleted + archived;
+      if (total > 0) {
+        const msg = `You changed ${total} entries:\n` +
+          (added ? `• ${added} new\n` : "") +
+          (edited ? `• ${edited} edited\n` : "") +
+          (deleted ? `• ${deleted} deleted\n` : "") +
+          (archived ? `• ${archived} archived\n` : "") +
+          `\nProceed to download?`;
+
+        if (!confirm(msg)) return;
+      }
+    }
 
     const master = prompt("Enter master password to re-encrypt and download:");
     if (!master) return;

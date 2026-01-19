@@ -16,6 +16,7 @@ export function setUnlocked(meta, data) {
   state.locked = false;
   state.vaultMeta = meta;
   state.vaultData = data;
+  state.changeLog = { added: 0, edited: 0, deleted: 0, archived: 0 };
 }
 
 export function wipeSensitive() {
