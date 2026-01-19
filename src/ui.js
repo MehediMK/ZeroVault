@@ -6,9 +6,12 @@ function el(tag, attrs = {}, children = []) {
     if (k === "class") n.className = v;
     else if (k === "text") n.textContent = v;
     else if (k.startsWith("on") && typeof v === "function") n.addEventListener(k.slice(2), v);
-    else n.setAttribute(k, v);
+    else if (k === "checked" || k === "disabled" || k === "selected" || k === "value") n[k] = v;
+    else if (v !== undefined && v !== null && v !== false) n.setAttribute(k, v);
   }
-  for (const c of children) n.appendChild(c);
+  for (const c of children) {
+    if (c) n.appendChild(c);
+  }
   return n;
 }
 
