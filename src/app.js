@@ -16,6 +16,7 @@ const lockBtn = document.getElementById("lockBtn");
 let selectedEntryId = null;
 let visibleFilter = { q: "", tag: "" };
 let visiblePasswords = new Set();
+let deletingEntryIds = new Set();
 
 // Minimal UX routing: locked screens
 let mode = "home"; // home | create | open
@@ -32,6 +33,7 @@ function lockNow() {
   selectedEntryId = null;
   visibleFilter = { q: "", tag: "" };
   visiblePasswords.clear();
+  deletingEntryIds.clear();
   wipeSensitive();
   mode = "home";
   transient = { fileObj: null, fileName: "vault.json" };
@@ -326,6 +328,7 @@ const handlers = {
     const v = state.vaultData;
     if (!v) return;
     v.entries = v.entries.filter((x) => x.id !== id);
+    deletingEntryIds.delete(id);
     if (selectedEntryId === id) selectedEntryId = null;
     render(appRoot, handlers);
     renderEditor(selectedEntryId ? getEntryById(selectedEntryId) : null, handlers);
@@ -414,6 +417,21 @@ const handlers = {
   },
 
   isPasswordVisible: (id) => visiblePasswords.has(id),
+
+  onInitiateDelete: (id) => {
+    if (state.readOnly) return;
+    deletingEntryIds.add(id);
+    render(appRoot, handlers);
+    armInactivity();
+  },
+
+  onCancelDelete: (id) => {
+    deletingEntryIds.delete(id);
+    render(appRoot, handlers);
+    armInactivity();
+  },
+
+  isEntryDeleting: (id) => deletingEntryIds.has(id),
 };
 
 /** ✅ Now do initial render */

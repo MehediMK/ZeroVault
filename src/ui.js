@@ -116,10 +116,19 @@ function renderEntriesTable(handlers) {
 
   const tbody = el("tbody");
   for (const e of entries) {
+    const deleteActions = handlers.isEntryDeleting(e.id)
+      ? [
+        el("button", { class: "danger", text: "Confirm", onclick: () => handlers.onDeleteEntry(e.id) }),
+        el("button", { class: "secondary", text: "Cancel", onclick: () => handlers.onCancelDelete(e.id) }),
+      ]
+      : [
+        !state.readOnly ? el("button", { class: "danger", text: "Delete", onclick: () => handlers.onInitiateDelete(e.id) }) : null,
+      ];
+
     const actions = el("div", { class: "inline" }, [
       el("button", { class: "secondary", text: state.readOnly ? "View" : "Edit", onclick: () => handlers.onEditEntry(e.id) }),
       !state.readOnly ? el("button", { class: "secondary", text: "Copy Password", onclick: () => handlers.onCopyPassword(e.id) }) : null,
-      !state.readOnly ? el("button", { class: "danger", text: "Delete", onclick: () => handlers.onDeleteEntry(e.id) }) : null,
+      ...deleteActions
     ].filter(Boolean));
 
     tbody.appendChild(
