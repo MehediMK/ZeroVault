@@ -1,5 +1,6 @@
 import { state, setUnlocked, wipeSensitive, resetInactivityTimer, isUnlocked } from "./state.js";
 import { render, renderEditor, getEditorFormValues, getSearchValues, renderQRModal, closeQRModal } from "./ui.js";
+import { getDomainColor, getInitials, timeAgo } from "./helpers.js";
 import {
   newEmptyVaultPayload,
   createEncryptedVaultFile,
@@ -14,10 +15,11 @@ const lockBtn = document.getElementById("lockBtn");
 
 // In-memory only; user must re-enter master password to save (by design).
 let selectedEntryId = null;
-let visibleFilter = { q: "", tag: "" };
+let visibleFilter = { q: "", tag: "", favoritesOnly: false, showArchived: false };
 let visiblePasswords = new Set();
 let deletingEntryIds = new Set();
 let qrState = { chunks: [], index: 0 };
+let keyboardNavIndex = -1; // -1 means no selection specific for keyboard
 
 // Minimal UX routing: locked screens
 let mode = "home"; // home | create | open
@@ -32,7 +34,8 @@ function updateLockButton() {
 
 function lockNow() {
   selectedEntryId = null;
-  visibleFilter = { q: "", tag: "" };
+  keyboardNavIndex = -1;
+  visibleFilter = { q: "", tag: "", favoritesOnly: false, showArchived: false };
   visiblePasswords.clear();
   deletingEntryIds.clear();
   qrState = { chunks: [], index: 0 };
@@ -62,6 +65,43 @@ function armInactivity() {
   );
 });
 
+// Keyboard Navigation Listener
+document.addEventListener("keydown", (e) => {
+  if (!isUnlocked() || state.readOnly) return;
+  // If editing an input, ignore navigation
+  if (["INPUT", "TEXTAREA"].includes(document.activeElement.tagName)) return;
+
+  const entries = handlers.getVisibleEntries();
+  if (entries.length === 0) return;
+
+  if (e.key === "ArrowDown") {
+    e.preventDefault();
+    keyboardNavIndex = Math.min(keyboardNavIndex + 1, entries.length - 1);
+    render(appRoot, handlers);
+  } else if (e.key === "ArrowUp") {
+    e.preventDefault();
+    keyboardNavIndex = Math.max(keyboardNavIndex - 1, 0);
+    render(appRoot, handlers);
+  } else if (e.key === "Enter") {
+    e.preventDefault();
+    if (keyboardNavIndex >= 0 && entries[keyboardNavIndex]) {
+      handlers.onEditEntry(entries[keyboardNavIndex].id);
+    }
+  } else if (e.key.toLowerCase() === "c") {
+    if (keyboardNavIndex >= 0 && entries[keyboardNavIndex]) {
+      handlers.onCopyPassword(entries[keyboardNavIndex].id);
+    }
+  } else if (e.key.toLowerCase() === "e") {
+    if (keyboardNavIndex >= 0 && entries[keyboardNavIndex]) {
+      handlers.onEditEntry(entries[keyboardNavIndex].id);
+    }
+  } else if (e.key === "Delete") {
+    if (keyboardNavIndex >= 0 && entries[keyboardNavIndex]) {
+      handlers.onArchiveEntry(entries[keyboardNavIndex].id);
+    }
+  }
+});
+
 document.addEventListener("visibilitychange", () => {
   // Relaxed behavior: rely on the standard inactivity timer (e.g. 2 mins)
   // instead of locking immediately when the tab is hidden.
@@ -75,6 +115,28 @@ function getEntryById(id) {
   if (!v) return null;
   return (v.entries || []).find((x) => x.id === id) || null;
 }
+
+// ... render functions (create, open, etc) remain mostly same ...
+// For brevity, assuming renderCreateScreen, renderOpenScreen, etc are here or imported if I was refactoring fully, 
+// but since I'm patching app.js, I will keep the large blocks below unmodified in the replacement unless necessary.
+// Actually, to avoid errors with replacing huge blocks, I will target specific handler section.
+// Wait, I need to replace the whole file imports anyway to add helpers.
+
+// ... (Create/Open functions skipped in detail here but assumed present in file) ...
+
+// Let's scroll down to handlers definition to begin my surgical replacement if possible. 
+// But since I changed imports, I have to provide the top of the file. 
+
+// I will assume the file starts with imports and ends with handlers.
+// Since I can't see the middle "render" functions in my mental diff easily without reading them all,
+// I'll stick to replacing the HANDLERS and the IMPORTS/STATE section. 
+
+// Let's do imports and state variables first.
+// Then I will do a separate one for Handlers.
+
+/* ... */
+
+
 
 function renderCreateScreen() {
   const wrap = document.createElement("div");
@@ -548,6 +610,12 @@ const handlers = {
     armInactivity();
   },
 
+  onToggleArchiveFilter: () => {
+    visibleFilter.showArchived = !visibleFilter.showArchived;
+    render(appRoot, handlers);
+    armInactivity();
+  },
+
   onCopyUsername: async (id) => {
     const e = getEntryById(id);
     if (!e) return;
@@ -557,7 +625,7 @@ const handlers = {
       await navigator.clipboard.writeText(e.username || "");
       toast("Copied username.");
       setTimeout(async () => {
-        // Best effort clear, though typically specialized for passwords.
+        // Best effort clear
       }, 20000);
     } catch {
       toast("Clipboard copy failed.", true);
@@ -567,6 +635,7 @@ const handlers = {
 
   onDeleteEntry: (id) => {
     if (state.readOnly) return toast("Action disabled in Emergency Read-Only Mode", true);
+    // Permanent delete
     const v = state.vaultData;
     if (!v) return;
     v.entries = v.entries.filter((x) => x.id !== id);
@@ -574,6 +643,40 @@ const handlers = {
     if (selectedEntryId === id) selectedEntryId = null;
     render(appRoot, handlers);
     renderEditor(selectedEntryId ? getEntryById(selectedEntryId) : null, handlers);
+    armInactivity();
+  },
+
+  onArchiveEntry: (id) => {
+    if (state.readOnly) return toast("Action disabled in Emergency Read-Only Mode", true);
+    const e = getEntryById(id);
+    if (e) {
+      e.archived = true;
+      e.updatedAt = new Date().toISOString();
+      toast("Entry archived.");
+
+      // Auto-move selection if keyboard nav active
+      if (keyboardNavIndex >= 0) {
+        // Stay at same index or move up if at end
+        const visible = handlers.getVisibleEntries();
+        if (keyboardNavIndex >= visible.length) keyboardNavIndex = Math.max(0, visible.length - 1);
+      }
+
+      render(appRoot, handlers);
+      if (selectedEntryId === id) renderEditor(null, handlers); // close editor if archived
+    }
+    armInactivity();
+  },
+
+  onRestoreEntry: (id) => {
+    if (state.readOnly) return toast("Action disabled in Emergency Read-Only Mode", true);
+    const e = getEntryById(id);
+    if (e) {
+      e.archived = false;
+      e.updatedAt = new Date().toISOString();
+      toast("Entry restored.");
+      render(appRoot, handlers);
+      if (selectedEntryId === id) renderEditor(e, handlers);
+    }
     armInactivity();
   },
 
@@ -617,8 +720,21 @@ const handlers = {
   getVisibleEntries: () => {
     const v = state.vaultData;
     if (!v) return [];
-    const { q, tag, favoritesOnly } = visibleFilter;
+    const { q, tag, favoritesOnly, showArchived } = visibleFilter;
     let out = [...(v.entries || [])];
+
+    // Filter archived logic
+    if (!showArchived) {
+      out = out.filter(e => !e.archived);
+    } else {
+      // If showArchived is TRUE, maybe we ONLY show archived? 
+      // Or show ALL? Usually "Archive" view shows only archived or mixed.
+      // Let's make it intuitive: if toggle is ON, show everything (or better, make it a mode).
+      // Standard pattern: "Show Archived" implies inclusion. 
+      // But better for "Archive" management: Filter to JUST archived?
+      // Let's do: if showArchived is true, show ONLY archived items to easily find them.
+      out = out.filter(e => e.archived);
+    }
 
     if (favoritesOnly) {
       out = out.filter(e => e.isFavorite);
@@ -635,24 +751,34 @@ const handlers = {
       out = out.filter((e) => (e.tags || []).some((t) => t.toLowerCase() === tt));
     }
 
-    // Sort favorites to top by default if not filtering
+    // Sort: favorites first
     out.sort((a, b) => {
-      if (a.isFavorite === b.isFavorite) return 0;
-      return a.isFavorite ? -1 : 1;
+      if (!!a.isFavorite !== !!b.isFavorite) {
+        return a.isFavorite ? -1 : 1;
+      }
+      return 0;
     });
 
     return out;
   },
 
+  // Helper for UI to know which row is selected via keyboard
+  isKeyboardSelected: (index) => index === keyboardNavIndex,
+
+  isShowArchived: () => visibleFilter.showArchived,
+
   onApplySearch: () => {
-    visibleFilter = getSearchValues();
+    // Merge new search values with existing filter state (preserving favoritesOnly)
+    visibleFilter = { ...visibleFilter, ...getSearchValues() };
     render(appRoot, handlers);
     renderEditor(selectedEntryId ? getEntryById(selectedEntryId) : null, handlers);
     armInactivity();
   },
 
   onClearSearch: () => {
-    visibleFilter = { q: "", tag: "" };
+    // Clear search terms but preserve Favorites toggle? Usually Clear implies 'Reset All'.
+    // Let's reset everything for clarity.
+    visibleFilter = { q: "", tag: "", favoritesOnly: false, showArchived: false };
     render(appRoot, handlers);
     renderEditor(selectedEntryId ? getEntryById(selectedEntryId) : null, handlers);
     armInactivity();
@@ -688,6 +814,26 @@ const handlers = {
   isEntryDeleting: (id) => deletingEntryIds.has(id),
 };
 
-/** ✅ Now do initial render */
-render(appRoot, handlers);
-updateLockButton();
+// Initial Render
+function init() {
+  try {
+    const root = document.getElementById("app");
+    if (root) {
+      render(root, handlers);
+      updateLockButton();
+    } else {
+      window.addEventListener('DOMContentLoaded', () => {
+        try {
+          render(document.getElementById("app"), handlers);
+          updateLockButton();
+        } catch (e) {
+          document.body.innerHTML = `<div style="color:red; padding:20px;"><h3>Error initializing app:</h3><pre>${e.stack}</pre></div>`;
+        }
+      });
+    }
+  } catch (e) {
+    document.body.innerHTML = `<div style="color:red; padding:20px;"><h3>Error initializing app (main):</h3><pre>${e.stack}</pre></div>`;
+  }
+}
+
+init();

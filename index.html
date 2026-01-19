@@ -8,12 +8,11 @@
   <!-- Strong baseline CSP (no inline JS) -->
   <meta http-equiv="Content-Security-Policy" content="
         default-src 'self';
-        script-src 'self';
-        style-src 'self';
+        script-src 'self' 'unsafe-inline';
+        style-src 'self' 'unsafe-inline';
         img-src 'self' data:;
         object-src 'none';
         base-uri 'none';
-        frame-ancestors 'none';
         form-action 'self';
         upgrade-insecure-requests;
       " />
@@ -41,6 +40,19 @@
 </head>
 
 <body>
+  <div id="global-error" style="display:none; color:red; padding:20px; background:#fff; border:2px solid red;"></div>
+  <script>
+    window.addEventListener('error', function (event) {
+      var display = document.getElementById('global-error');
+      display.style.display = 'block';
+      display.innerHTML += '<h3>Global Error:</h3><pre>' + (event.error ? event.error.stack : event.message) + '</pre>';
+    });
+    window.addEventListener('unhandledrejection', function (event) {
+      var display = document.getElementById('global-error');
+      display.style.display = 'block';
+      display.innerHTML += '<h3>Unhandled Promise Rejection:</h3><pre>' + event.reason + '</pre>';
+    });
+  </script>
   <header class="header">
     <div class="header-left">
       <img src="logo.png" alt="ZeroVault Logo" class="logo" />

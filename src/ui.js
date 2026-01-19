@@ -1,4 +1,5 @@
 import { state, isUnlocked } from "./state.js";
+import { getDomainColor, getInitials, timeAgo } from "./helpers.js";
 
 function el(tag, attrs = {}, children = []) {
   const n = document.createElement(tag);
@@ -78,7 +79,7 @@ function renderUnlocked(handlers) {
   ]);
 
   const searchRow = el("div", { class: "card" }, [
-    el("h3", { text: "Search" }),
+    el("h3", { text: "Search & Filter" }),
     el("div", { class: "row" }, [
       el("div", {}, [
         el("label", { text: "Query" }),
@@ -88,10 +89,14 @@ function renderUnlocked(handlers) {
         el("label", { text: "Filter by tag (optional)" }),
         el("input", { id: "searchTag", type: "text", placeholder: "e.g. work" }),
       ]),
-      el("div", { style: "display:flex; align-items:flex-end;" }, [
+      el("div", { style: "display:flex; flex-direction: column; gap: 8px; justify-content: flex-end; padding-bottom: 4px;" }, [
         el("label", { style: "cursor:pointer; display:flex; align-items:center; gap:5px;" }, [
-          el("input", { type: "checkbox", checked: handlers.isFavoritesFilterOn() ? "true" : undefined, onchange: handlers.onToggleFavoriteFilter }),
+          el("input", { type: "checkbox", checked: handlers.isFavoritesFilterOn(), onchange: handlers.onToggleFavoriteFilter }),
           el("span", { text: "Favorites Only" })
+        ]),
+        el("label", { style: "cursor:pointer; display:flex; align-items:center; gap:5px;" }, [
+          el("input", { type: "checkbox", checked: handlers.isShowArchived(), onchange: handlers.onToggleArchiveFilter }),
+          el("span", { text: "Show Archived Only" })
         ])
       ]),
     ]),
@@ -101,8 +106,9 @@ function renderUnlocked(handlers) {
     ]),
   ]);
 
+  const viewTitle = handlers.isShowArchived() ? "Archived Entries" : "Entries";
   const tableCard = el("div", { class: "card" }, [
-    el("h3", { text: "Entries" }),
+    el("h3", { text: viewTitle }),
     renderEntriesTable(handlers),
   ]);
 
@@ -122,34 +128,52 @@ function renderEntriesTable(handlers) {
   const thead = el("thead", {}, [
     el("tr", {}, [
       el("th", { text: "" }), // Star col
-      el("th", { text: "Title" }),
-      el("th", { text: "URL" }),
+      el("th", { text: "Identity" }),
       el("th", { text: "Username" }),
-      el("th", { text: "Tags" }),
       el("th", { text: "Password" }),
+      el("th", { text: "Tags" }),
+      el("th", { text: "Updated" }),
       el("th", { text: "Actions" }),
     ]),
   ]);
 
   const tbody = el("tbody");
-  for (const e of entries) {
-    const deleteActions = handlers.isEntryDeleting(e.id)
-      ? [
-        el("button", { class: "danger", text: "Confirm", onclick: () => handlers.onDeleteEntry(e.id) }),
-        el("button", { class: "secondary", text: "Cancel", onclick: () => handlers.onCancelDelete(e.id) }),
-      ]
-      : [
-        !state.readOnly ? el("button", { class: "danger", text: "Delete", onclick: () => handlers.onInitiateDelete(e.id) }) : null,
-      ];
+  entries.forEach((e, index) => {
+    // Generate Visual Identity
+    const initials = getInitials(e.title || e.url || "??");
+    const color = getDomainColor(e.title || e.url || "??");
 
-    const actions = el("div", { class: "inline" }, [
-      el("button", { class: "secondary", text: state.readOnly ? "View" : "Edit", onclick: () => handlers.onEditEntry(e.id) }),
-      !state.readOnly ? el("button", { class: "secondary", text: "Copy Password", onclick: () => handlers.onCopyPassword(e.id) }) : null,
-      ...deleteActions
-    ].filter(Boolean));
+    // Actions
+    let actionButtons = [];
+    if (e.archived) {
+      actionButtons = [
+        !state.readOnly ? el("button", { class: "secondary", text: "Restore", onclick: () => handlers.onRestoreEntry(e.id) }) : null,
+        !state.readOnly ? el("button", { class: "danger", text: "Delete Permanently", onclick: () => handlers.onInitiateDelete(e.id) }) : null,
+      ];
+    } else {
+      const deleteBtn = handlers.isEntryDeleting(e.id)
+        ? [
+          el("button", { class: "danger", text: "Confirm", onclick: () => handlers.onDeleteEntry(e.id) }),
+          el("button", { class: "secondary", text: "Cancel", onclick: () => handlers.onCancelDelete(e.id) }),
+        ]
+        : [
+          !state.readOnly ? el("button", { class: "danger", text: "Archive", onclick: () => handlers.onArchiveEntry(e.id) }) : null,
+        ];
+
+      actionButtons = [
+        el("button", { class: "secondary", text: state.readOnly ? "View" : "Edit", onclick: () => handlers.onEditEntry(e.id) }),
+        !state.readOnly ? el("button", { class: "secondary", text: "Copy Pass", onclick: () => handlers.onCopyPassword(e.id) }) : null,
+        ...deleteBtn
+      ];
+    }
+
+    const trClass = [
+      handlers.isKeyboardSelected(index) ? "selected" : "",
+      e.archived ? "archived" : ""
+    ].filter(Boolean).join(" ");
 
     tbody.appendChild(
-      el("tr", {}, [
+      el("tr", { class: trClass }, [
         el("td", {}, [
           el("span", {
             text: e.isFavorite ? "★" : "☆",
@@ -158,15 +182,21 @@ function renderEntriesTable(handlers) {
             onclick: () => handlers.onToggleFavorite(e.id)
           })
         ]),
-        el("td", { text: e.title || "" }),
-        el("td", { text: e.url || "" }),
+        el("td", {}, [
+          el("div", { class: "title-cell" }, [
+            el("div", { class: "entry-icon", style: `background-color: ${color}`, text: initials }),
+            el("div", { style: "display:flex; flex-direction:column;" }, [
+              el("span", { class: "title-text", text: e.title || "(No Title)" }),
+              el("span", { class: "meta-text", text: e.url || "" })
+            ])
+          ])
+        ]),
         el("td", {}, [
           el("div", { class: "inline" }, [
             el("span", { text: e.username || "" }),
             e.username ? el("button", { class: "small secondary", text: "📋", title: "Copy Username", onclick: () => handlers.onCopyUsername(e.id) }) : null
           ])
         ]),
-        el("td", { text: (e.tags || []).join(", ") }),
         el("td", {}, [
           el("div", { style: "display: flex; align-items: center; gap: 8px;" }, [
             el("span", { text: handlers.isPasswordVisible(e.id) ? (e.password || "") : "••••••••" }),
@@ -178,10 +208,12 @@ function renderEntriesTable(handlers) {
             })
           ])
         ]),
-        el("td", {}, [actions]),
+        el("td", { text: (e.tags || []).join(", ") }),
+        el("td", { class: "small", text: timeAgo(e.updatedAt || e.createdAt) }),
+        el("td", {}, [el("div", { class: "inline" }, actionButtons.filter(Boolean))]),
       ])
     );
-  }
+  });
 
   table.appendChild(thead);
   table.appendChild(tbody);

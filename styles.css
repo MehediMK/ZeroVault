@@ -404,6 +404,48 @@ button.small {
   }
 }
 
+/* Entry Visual Identity */
+.entry-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.title-cell {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.title-text {
+  font-weight: 500;
+  color: var(--text);
+}
+
+.meta-text {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+/* Keyboard Navigation */
+tr.selected {
+  background: rgba(82, 103, 223, 0.15) !important;
+  /* distinct from hover */
+  border-left: 3px solid var(--primary);
+}
+
+tr.archived {
+  opacity: 0.6;
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar {
   width: 8px;
