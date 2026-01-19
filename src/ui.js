@@ -57,6 +57,7 @@ function renderUnlocked(handlers) {
     !state.readOnly ? el("button", { text: "Add Entry", onclick: handlers.onAddEntry }) : null,
     !state.readOnly ? el("button", { class: "secondary", text: "Save & Download Vault JSON", onclick: handlers.onSaveDownload }) : null,
     !state.readOnly ? el("button", { class: "secondary", text: "Change Master Password", onclick: handlers.onGoChangePassword }) : null,
+    !state.readOnly ? el("button", { class: "secondary", text: "Mobile Transfer (QR)", onclick: handlers.onGoQR }) : null,
     !state.readOnly ? el("button", { class: "secondary", text: "Switch to Read-Only", onclick: handlers.onSwitchReadOnly }) : null,
   ].filter(Boolean);
 
@@ -242,4 +243,55 @@ export function getSearchValues() {
   const q = document.getElementById("searchQuery")?.value ?? "";
   const tag = document.getElementById("searchTag")?.value ?? "";
   return { q: q.trim(), tag: tag.trim() };
+}
+
+export function renderQRModal(chunks, index, total, handlers) {
+  // Use existing overlay or create one
+  let overlay = document.getElementById("qr-overlay");
+  if (!overlay) {
+    overlay = el("div", { id: "qr-overlay", style: "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:9999;display:flex;align-items:center;justify-content:center;" });
+    document.body.appendChild(overlay);
+  }
+  overlay.innerHTML = "";
+
+  const chunkData = chunks[index];
+
+  // Generate QR
+  let qrHtml = "";
+  try {
+    if (window.qrcode) {
+      const typeNumber = 0; // Auto detection
+      const errorCorrectionLevel = 'L';
+      const qr = window.qrcode(typeNumber, errorCorrectionLevel);
+      qr.addData(chunkData);
+      qr.make();
+      qrHtml = qr.createImgTag(5, 10); // cell size, margin
+    } else {
+      qrHtml = "<p>QR Library not found. Check src/qrcode.js</p>";
+    }
+  } catch (e) {
+    qrHtml = `<p class='error'>Error: ${e.message}</p>`;
+  }
+
+  const card = el("div", { class: "card", style: "max-width: 500px; text-align: center; background: white; color: black;" }, [
+    el("h2", { text: `Mobile Transfer (${index + 1}/${total})` }),
+    el("p", { text: "Scan this code with the ZeroVault mobile app (or text scanner)." }),
+    el("div", { style: "margin: 20px 0;" }, []), // placeholder for QR
+    el("div", { class: "actions", style: "justify-content: center;" }, [
+      el("button", { class: "secondary", text: "Previous", onclick: handlers.onPrevQR, disabled: index === 0 ? "true" : undefined }),
+      el("button", { text: index === total - 1 ? "Finish" : "Next", onclick: handlers.onNextQR }),
+      el("button", { class: "secondary", text: "Close", onclick: handlers.onCloseQR }),
+    ]),
+    el("p", { class: "small", text: `Chunk Size: ${chunkData.length} chars` })
+  ]);
+
+  // Inject HTML string for QR image
+  card.children[2].innerHTML = qrHtml;
+
+  overlay.appendChild(card);
+}
+
+export function closeQRModal() {
+  const overlay = document.getElementById("qr-overlay");
+  if (overlay) overlay.remove();
 }

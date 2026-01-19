@@ -1,5 +1,5 @@
 import { state, setUnlocked, wipeSensitive, resetInactivityTimer, isUnlocked } from "./state.js";
-import { render, renderEditor, getEditorFormValues, getSearchValues } from "./ui.js";
+import { render, renderEditor, getEditorFormValues, getSearchValues, renderQRModal, closeQRModal } from "./ui.js";
 import {
   newEmptyVaultPayload,
   createEncryptedVaultFile,
@@ -17,6 +17,7 @@ let selectedEntryId = null;
 let visibleFilter = { q: "", tag: "" };
 let visiblePasswords = new Set();
 let deletingEntryIds = new Set();
+let qrState = { chunks: [], index: 0 };
 
 // Minimal UX routing: locked screens
 let mode = "home"; // home | create | open
@@ -34,6 +35,8 @@ function lockNow() {
   visibleFilter = { q: "", tag: "" };
   visiblePasswords.clear();
   deletingEntryIds.clear();
+  qrState = { chunks: [], index: 0 };
+  closeQRModal();
   wipeSensitive();
   mode = "home";
   transient = { fileObj: null, fileName: "vault.json" };
@@ -344,6 +347,68 @@ const handlers = {
     mode = "change-password";
     appRoot.innerHTML = "";
     appRoot.appendChild(renderChangePasswordScreen());
+  },
+
+  onGoQR: async () => {
+    if (state.readOnly) return toast("Disabled in Read-Only Mode", true);
+    if (!state.vaultData) return;
+
+    // Warn if qrcode lib missing
+    if (!window.qrcode) {
+      toast("QRCode library not loaded. Check connection or src/qrcode.js", true);
+      return;
+    }
+
+    const master = prompt("Enter master password to generate transfer QRs:");
+    if (!master) return;
+
+    try {
+      const fileJson = await reencryptVaultToFile(state.vaultData, master, state.vaultMeta);
+      const jsonStr = JSON.stringify(fileJson);
+
+      // Chunk it
+      const chunkSize = 800;
+      const totalLen = jsonStr.length;
+      const chunks = [];
+      const totalChunks = Math.ceil(totalLen / chunkSize);
+
+      for (let i = 0; i < totalChunks; i++) {
+        const chunk = jsonStr.slice(i * chunkSize, (i + 1) * chunkSize);
+        // Format: ZV1:index/total:data  (index is 1-based)
+        chunks.push(`ZV1:${i + 1}/${totalChunks}:${chunk}`);
+      }
+
+      qrState = { chunks, index: 0 };
+      renderQRModal(qrState.chunks, qrState.index, qrState.chunks.length, handlers);
+      armInactivity();
+    } catch (e) {
+      toast("Failed to encrypt for QR: " + e.message, true);
+    }
+  },
+
+  onNextQR: () => {
+    if (qrState.index < qrState.chunks.length - 1) {
+      qrState.index++;
+      renderQRModal(qrState.chunks, qrState.index, qrState.chunks.length, handlers);
+      armInactivity();
+    } else {
+      closeQRModal();
+      toast("Transfer finished.");
+    }
+  },
+
+  onPrevQR: () => {
+    if (qrState.index > 0) {
+      qrState.index--;
+      renderQRModal(qrState.chunks, qrState.index, qrState.chunks.length, handlers);
+      armInactivity();
+    }
+  },
+
+  onCloseQR: () => {
+    qrState = { chunks: [], index: 0 };
+    closeQRModal();
+    armInactivity();
   },
 
   onSwitchReadOnly: () => {
