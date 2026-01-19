@@ -25,25 +25,30 @@ export function render(appRoot, handlers) {
 }
 
 function renderLocked(handlers) {
-  const card = el("div", { class: "card" }, [
-    el("h2", { text: "Vault locked" }),
-    el("p", { class: "notice", text: "Create a new vault or open an existing encrypted JSON file." }),
-    el("div", { class: "actions" }, [
-      el("button", { text: "Create New Vault", onclick: handlers.onGoCreate }),
-      el("button", { class: "secondary", text: "Open Existing Vault", onclick: handlers.onGoOpen }),
+  const wrapper = el("div", { style: "max-width: 460px; margin: 40px auto; text-align: center;" }, [
+    el("div", { style: "font-size: 3rem; margin-bottom: 20px;" }, [
+      el("span", { text: "🔐" })
     ]),
+    el("div", { class: "card" }, [
+      el("h2", { text: "Welcome to ZeroVault" }),
+      el("p", { class: "notice", text: "Secure, offline-first password management in your browser." }),
+      el("div", { class: "actions centered" }, [
+        el("button", { text: "Create New Vault", onclick: handlers.onGoCreate, style: "width: 100%" }),
+        el("button", { class: "secondary", text: "Open Existing Vault", onclick: handlers.onGoOpen, style: "width: 100%" }),
+      ]),
+    ]),
+
+    el("div", { class: "card", style: "border: 1px dashed var(--border); background: transparent;" }, [
+      el("h3", { text: "Security & Privacy", style: "border:none; margin-bottom: 10px; font-size: 1rem;" }),
+      el("ul", { class: "small", style: "text-align: left; padding-left: 20px; color: var(--muted);" }, [
+        el("li", { text: "End-to-end encrypted locally (AES-GCM)." }),
+        el("li", { text: "Zero knowledge: We never see your password." }),
+        el("li", { text: "No cloud sync: You own your data file." }),
+      ]),
+    ])
   ]);
 
-  const hint = el("div", { class: "card" }, [
-    el("h3", { text: "Security & Storage" }),
-    el("ul", {}, [
-      el("li", { text: "Encryption happens entirely in your browser." }),
-      el("li", { text: "No Cloud API: This app has no server-side storage." }),
-      el("li", { text: "Manual Sync: Save the file to Drive/Dropbox to access it anywhere." }),
-    ]),
-  ]);
-
-  return el("div", {}, [card, hint]);
+  return wrapper;
 }
 
 function renderUnlocked(handlers) {
@@ -180,7 +185,9 @@ function renderEntriesTable(handlers) {
 
   table.appendChild(thead);
   table.appendChild(tbody);
-  return table;
+
+  // Wrap table in responsive container
+  return el("div", { class: "table-wrapper" }, [table]);
 }
 
 export function renderEditor(entryOrNull, handlers) {
