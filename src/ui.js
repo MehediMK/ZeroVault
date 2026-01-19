@@ -80,6 +80,12 @@ function renderUnlocked(handlers) {
         el("label", { text: "Filter by tag (optional)" }),
         el("input", { id: "searchTag", type: "text", placeholder: "e.g. work" }),
       ]),
+      el("div", { style: "display:flex; align-items:flex-end;" }, [
+        el("label", { style: "cursor:pointer; display:flex; align-items:center; gap:5px;" }, [
+          el("input", { type: "checkbox", checked: handlers.isFavoritesFilterOn() ? "true" : undefined, onchange: handlers.onToggleFavoriteFilter }),
+          el("span", { text: "Favorites Only" })
+        ])
+      ]),
     ]),
     el("div", { class: "actions" }, [
       el("button", { class: "secondary", text: "Apply", onclick: () => handlers.onApplySearch() }),
@@ -107,6 +113,7 @@ function renderEntriesTable(handlers) {
   const table = el("table", { class: "table" });
   const thead = el("thead", {}, [
     el("tr", {}, [
+      el("th", { text: "" }), // Star col
       el("th", { text: "Title" }),
       el("th", { text: "URL" }),
       el("th", { text: "Username" }),
@@ -135,9 +142,22 @@ function renderEntriesTable(handlers) {
 
     tbody.appendChild(
       el("tr", {}, [
+        el("td", {}, [
+          el("span", {
+            text: e.isFavorite ? "★" : "☆",
+            style: `cursor:pointer; font-size: 1.2em; color: ${e.isFavorite ? "#ffc107" : "#ccc"}`,
+            title: "Toggle Favorite",
+            onclick: () => handlers.onToggleFavorite(e.id)
+          })
+        ]),
         el("td", { text: e.title || "" }),
         el("td", { text: e.url || "" }),
-        el("td", { text: e.username || "" }),
+        el("td", {}, [
+          el("div", { class: "inline" }, [
+            el("span", { text: e.username || "" }),
+            e.username ? el("button", { class: "small secondary", text: "📋", title: "Copy Username", onclick: () => handlers.onCopyUsername(e.id) }) : null
+          ])
+        ]),
         el("td", { text: (e.tags || []).join(", ") }),
         el("td", {}, [
           el("div", { style: "display: flex; align-items: center; gap: 8px;" }, [
@@ -223,6 +243,25 @@ export function renderEditor(entryOrNull, handlers) {
 
   const notes = document.getElementById("f_notes");
   if (notes) notes.value = e.notes || "";
+
+  // History Section
+  if (e.history && e.history.length > 0) {
+    const historyCard = el("div", { style: "margin-top: 20px; padding-top: 10px; border-top: 1px solid #ccc;" }, [
+      el("h4", { text: "Version History" }),
+      el("ul", { class: "small", style: "list-style: none; padding: 0;" }, e.history.map((h, idx) => {
+        const dateStr = new Date(h.savedAt).toLocaleString();
+        return el("li", { style: "margin-bottom: 8px; padding: 8px; background: #eee; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;" }, [
+          el("span", { text: `${dateStr} ${h.reason ? '(' + h.reason + ')' : ''}` }),
+          !isRO ? el("button", {
+            class: "small secondary",
+            text: "Restore",
+            onclick: () => handlers.onRestoreHistory(e.id, idx)
+          }) : null
+        ]);
+      }))
+    ]);
+    form.appendChild(historyCard);
+  }
 }
 
 export function getEditorFormValues() {

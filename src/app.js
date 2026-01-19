@@ -459,10 +459,109 @@ const handlers = {
     if (!e) return;
 
     const vals = getEditorFormValues();
+
+    // Check if changes were actually made
+    const hasChanges = Object.keys(vals).some(k =>
+      JSON.stringify(vals[k]) !== JSON.stringify(e[k] || (Array.isArray(vals[k]) ? [] : ""))
+    );
+
+    if (hasChanges) {
+      // Versioning: Save current state to history before updating
+      e.history = e.history || [];
+      e.history.unshift({
+        savedAt: new Date().toISOString(),
+        snapshot: {
+          title: e.title,
+          url: e.url,
+          username: e.username,
+          password: e.password,
+          notes: e.notes,
+          tags: [...(e.tags || [])]
+        }
+      });
+      // Limit history to last 10 versions to save space
+      if (e.history.length > 10) e.history.length = 10;
+    }
+
     Object.assign(e, vals, { updatedAt: new Date().toISOString() });
 
     render(appRoot, handlers);
     renderEditor(getEntryById(id), handlers);
+    armInactivity();
+  },
+
+  onRestoreHistory: (entryId, historyIndex) => {
+    if (state.readOnly) return toast("Action disabled in Emergency Read-Only Mode", true);
+    if (!confirm("Are you sure you want to restore this version? The current version will be saved to history.")) return;
+
+    const e = getEntryById(entryId);
+    if (!e || !e.history || !e.history[historyIndex]) return;
+
+    const versionToRestore = e.history[historyIndex];
+
+    // Save current state as history before restoring
+    e.history.unshift({
+      savedAt: new Date().toISOString(),
+      reason: "Rollback",
+      snapshot: {
+        title: e.title,
+        url: e.url,
+        username: e.username,
+        password: e.password,
+        notes: e.notes,
+        tags: [...(e.tags || [])]
+      }
+    });
+
+    // Apply restored snapshot
+    Object.assign(e, versionToRestore.snapshot, { updatedAt: new Date().toISOString() });
+
+    // Correct logic: we just unshifted, so the index might have shifted if we were pointing to a specific index, 
+    // but typically we just pull the data and push new history. 
+    // The previous history items remain secure.
+
+    // Clean up history limit
+    if (e.history.length > 20) e.history.length = 20;
+
+    render(appRoot, handlers);
+    renderEditor(getEntryById(entryId), handlers);
+    toast("Restored entry to previous version.");
+    armInactivity();
+  },
+
+  onToggleFavorite: (id) => {
+    if (state.readOnly) return;
+    const e = getEntryById(id);
+    if (e) {
+      e.isFavorite = !e.isFavorite;
+      e.updatedAt = new Date().toISOString();
+      render(appRoot, handlers);
+      // If editor is open for this item, re-render it to show state change if we add star there
+      if (selectedEntryId === id) renderEditor(e, handlers);
+    }
+    armInactivity();
+  },
+
+  onToggleFavoriteFilter: () => {
+    visibleFilter.favoritesOnly = !visibleFilter.favoritesOnly;
+    render(appRoot, handlers);
+    armInactivity();
+  },
+
+  onCopyUsername: async (id) => {
+    const e = getEntryById(id);
+    if (!e) return;
+    if (state.readOnly) return toast("Clipboard disabled in Emergency Read-Only Mode", true);
+
+    try {
+      await navigator.clipboard.writeText(e.username || "");
+      toast("Copied username.");
+      setTimeout(async () => {
+        // Best effort clear, though typically specialized for passwords.
+      }, 20000);
+    } catch {
+      toast("Clipboard copy failed.", true);
+    }
     armInactivity();
   },
 
@@ -518,9 +617,12 @@ const handlers = {
   getVisibleEntries: () => {
     const v = state.vaultData;
     if (!v) return [];
-    const { q, tag } = visibleFilter;
+    const { q, tag, favoritesOnly } = visibleFilter;
     let out = [...(v.entries || [])];
 
+    if (favoritesOnly) {
+      out = out.filter(e => e.isFavorite);
+    }
     if (q) {
       const qq = q.toLowerCase();
       out = out.filter((e) => {
@@ -532,6 +634,13 @@ const handlers = {
       const tt = tag.toLowerCase();
       out = out.filter((e) => (e.tags || []).some((t) => t.toLowerCase() === tt));
     }
+
+    // Sort favorites to top by default if not filtering
+    out.sort((a, b) => {
+      if (a.isFavorite === b.isFavorite) return 0;
+      return a.isFavorite ? -1 : 1;
+    });
+
     return out;
   },
 
@@ -560,6 +669,8 @@ const handlers = {
   },
 
   isPasswordVisible: (id) => visiblePasswords.has(id),
+
+  isFavoritesFilterOn: () => !!visibleFilter.favoritesOnly,
 
   onInitiateDelete: (id) => {
     if (state.readOnly) return;
