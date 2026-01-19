@@ -61,6 +61,13 @@ ZeroVault is ideal if you want:
 
 ---
 
+### 📝 Run Locally
+```bash
+> python -m http.server 8000 
+```
+
+
+
 ## 🧾 Vault file format (v1)
 
 The vault file contains **no plaintext secrets**.
@@ -79,3 +86,4 @@ The vault file contains **no plaintext secrets**.
   },
   "encryptedData": "base64..."
 }
+```
