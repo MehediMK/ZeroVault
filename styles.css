@@ -475,3 +475,94 @@ tr.archived {
   height: auto;
   border-radius: 8px;
 }
+
+/* Drag and Drop Visuals */
+.draggable-source {
+  opacity: 0.4;
+  border: 2px dashed var(--primary);
+}
+
+.drop-target-hover {
+  background: rgba(82, 103, 223, 0.2) !important;
+  transform: scale(1.02);
+  border-color: var(--primary) !important;
+}
+
+.drop-zone {
+  transition: all 0.2s;
+  border: 2px dashed transparent;
+}
+
+.drop-zone.active-target {
+  border-color: var(--primary);
+  background: rgba(82, 103, 223, 0.05);
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  background: var(--secondary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: 0.8rem;
+  color: var(--text);
+  margin-right: 6px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tag-chip:hover {
+  background: var(--secondary-hover);
+  border-color: var(--muted);
+}
+
+/* Floating Drag Actions */
+#drag-actions {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(100px);
+  display: flex;
+  gap: 16px;
+  padding: 12px 20px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 50px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+  transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+#drag-actions.visible {
+  transform: translateX(-50%) translateY(0);
+}
+
+.drag-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-radius: 30px;
+  border: 2px dashed var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-weight: 600;
+  pointer-events: none;
+  /* enabled when dragging */
+}
+
+.drag-action-btn.active {
+  pointer-events: auto;
+}
+
+.drag-action-btn.archive-zone {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.drag-action-btn.favorite-zone {
+  border-color: #ffc107;
+  color: #ffc107;
+}

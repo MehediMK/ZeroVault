@@ -118,7 +118,36 @@ function renderUnlocked(handlers) {
     el("div", { id: "editorHost" }),
   ]);
 
-  return el("div", {}, [banner, top, searchRow, tableCard, editor].filter(Boolean));
+
+  const dragActions = el("div", { id: "drag-actions" }, [
+    el("div", {
+      class: "drag-action-btn favorite-zone",
+      ondragover: (e) => { e.preventDefault(); e.currentTarget.classList.add("drop-target-hover"); },
+      ondragleave: (e) => { e.currentTarget.classList.remove("drop-target-hover"); },
+      ondrop: (e) => {
+        e.preventDefault();
+        e.currentTarget.classList.remove("drop-target-hover");
+        const id = e.dataTransfer.getData("text/plain");
+        if (id) handlers.onToggleFavorite(id);
+        document.getElementById("drag-actions").classList.remove("visible");
+      }
+    }, [el("span", { text: "★ Favorite" })]),
+
+    el("div", {
+      class: "drag-action-btn archive-zone",
+      ondragover: (e) => { e.preventDefault(); e.currentTarget.classList.add("drop-target-hover"); },
+      ondragleave: (e) => { e.currentTarget.classList.remove("drop-target-hover"); },
+      ondrop: (e) => {
+        e.preventDefault();
+        e.currentTarget.classList.remove("drop-target-hover");
+        const id = e.dataTransfer.getData("text/plain");
+        if (id) handlers.onArchiveEntry(id);
+        document.getElementById("drag-actions").classList.remove("visible");
+      }
+    }, [el("span", { text: "🗑 Archive" })]),
+  ]);
+
+  return el("div", {}, [banner, top, searchRow, tableCard, editor, dragActions].filter(Boolean));
 }
 
 function renderEntriesTable(handlers) {
@@ -211,8 +240,41 @@ function renderEntriesTable(handlers) {
         el("td", { text: (e.tags || []).join(", ") }),
         el("td", { class: "small", text: timeAgo(e.updatedAt || e.createdAt) }),
         el("td", {}, [el("div", { class: "inline" }, actionButtons.filter(Boolean))]),
-      ])
+        el("td", {}, [el("div", { class: "inline" }, actionButtons.filter(Boolean))]),
+      ]),
+      // Drag Attributes
+      e.archived ? [] : [
+        el("div", {
+          draggable: "true",
+          ondragstart: (ev) => {
+            ev.dataTransfer.setData("text/plain", e.id);
+            ev.dataTransfer.effectAllowed = "move";
+            ev.currentTarget.classList.add("draggable-source");
+            document.getElementById("drag-actions")?.classList.add("visible");
+          },
+          ondragend: (ev) => {
+            ev.currentTarget.classList.remove("draggable-source");
+            document.getElementById("drag-actions")?.classList.remove("visible");
+          }
+        })
+      ]
     );
+
+    // Apply attributes directly to TR because el() helper appends children but TR needs listeners
+    const tr = tbody.lastChild;
+    if (!e.archived) {
+      tr.draggable = true;
+      tr.addEventListener("dragstart", (ev) => {
+        ev.dataTransfer.setData("text/plain", e.id);
+        ev.dataTransfer.effectAllowed = "move";
+        tr.classList.add("draggable-source");
+        document.getElementById("drag-actions")?.classList.add("visible");
+      });
+      tr.addEventListener("dragend", (ev) => {
+        tr.classList.remove("draggable-source");
+        document.getElementById("drag-actions")?.classList.remove("visible");
+      });
+    }
   });
 
   table.appendChild(thead);
