@@ -1,5 +1,5 @@
 import { state, setUnlocked, wipeSensitive, resetInactivityTimer, isUnlocked } from "./state.js";
-import { render, renderEditor, getEditorFormValues, getSearchValues } from "./ui.js";
+import { render, renderEditor, getEditorFormValues, getSearchValues, renderQRModal, closeQRModal } from "./ui.js";
 import {
   newEmptyVaultPayload,
   createEncryptedVaultFile,
@@ -15,6 +15,9 @@ const lockBtn = document.getElementById("lockBtn");
 // In-memory only; user must re-enter master password to save (by design).
 let selectedEntryId = null;
 let visibleFilter = { q: "", tag: "" };
+let visiblePasswords = new Set();
+let deletingEntryIds = new Set();
+let qrState = { chunks: [], index: 0 };
 
 // Minimal UX routing: locked screens
 let mode = "home"; // home | create | open
@@ -30,6 +33,10 @@ function updateLockButton() {
 function lockNow() {
   selectedEntryId = null;
   visibleFilter = { q: "", tag: "" };
+  visiblePasswords.clear();
+  deletingEntryIds.clear();
+  qrState = { chunks: [], index: 0 };
+  closeQRModal();
   wipeSensitive();
   mode = "home";
   transient = { fileObj: null, fileName: "vault.json" };
@@ -56,8 +63,11 @@ function armInactivity() {
 });
 
 document.addEventListener("visibilitychange", () => {
-  // optional strict behavior: lock when tab hidden
-  if (document.hidden && isUnlocked()) lockNow();
+  // Relaxed behavior: rely on the standard inactivity timer (e.g. 2 mins)
+  // instead of locking immediately when the tab is hidden.
+  if (!document.hidden && isUnlocked()) {
+    armInactivity();
+  }
 });
 
 function getEntryById(id) {
@@ -100,7 +110,7 @@ function renderCreateScreen() {
       Your master password is never stored. If you forget it, the vault cannot be recovered.
     </p>
     <p class="small">
-      No data is stored in your browser. You must keep the downloaded JSON safe.
+      No data is stored in the browser. Save the file to Drive/Dropbox/iCloud to prevent loss and sync devices.
     </p>
   `;
 
@@ -156,10 +166,15 @@ function renderOpenScreen() {
         <label>Upload encrypted vault JSON</label>
         <input id="ov_file" type="file" accept="application/json" />
       </div>
+    <div class="row">
       <div>
         <label>Master Password</label>
         <input id="ov_pw" type="password" autocomplete="current-password" />
       </div>
+    </div>
+    <div class="row" style="margin-top: 10px; align-items: center; justify-content: flex-start; gap: 8px;">
+      <input type="checkbox" id="ov_readonly" style="width: auto;" />
+      <label for="ov_readonly" style="display:inline; cursor:pointer; margin:0;">Open in Emergency Read-Only Mode</label>
     </div>
     <div class="actions">
       <button id="ov_open">Open Vault</button>
@@ -187,8 +202,10 @@ function renderOpenScreen() {
       const obj = await readJsonFile(file);
       const { meta, data } = await openEncryptedVaultFile(obj, pw);
 
+      const isReadOnly = wrap.querySelector("#ov_readonly").checked;
       state.fileNameHint = file.name || "vault.json";
       setUnlocked(meta, data);
+      state.readOnly = isReadOnly;
 
       updateLockButton();
       render(appRoot, handlers);
@@ -244,6 +261,75 @@ function passwordStrengthHint(pw) {
   return "Strong.";
 }
 
+function renderChangePasswordScreen() {
+  const wrap = document.createElement("div");
+  wrap.className = "card";
+  wrap.innerHTML = `
+    <h2>Change Master Password</h2>
+    <div class="row">
+      <div>
+        <label>New Master Password</label>
+        <input id="cp_pw" type="password" autocomplete="new-password" />
+        <div class="small" id="cp_strength"></div>
+      </div>
+      <div>
+        <label>Confirm New Password</label>
+        <input id="cp_pw2" type="password" autocomplete="new-password" />
+      </div>
+    </div>
+    <div class="actions">
+      <button id="cp_save">Change & Download Vault</button>
+      <button class="secondary" id="cp_back">Cancel</button>
+    </div>
+    <p class="small">
+      This will re-encrypt your <b>entire vault</b> with the new password and download it as a new file.
+      <br>
+      Please delete the old file after verifying the new one works.
+    </p>
+  `;
+
+  wrap.querySelector("#cp_back").addEventListener("click", () => {
+    mode = "home";
+    render(appRoot, handlers);
+  });
+
+  const pw = wrap.querySelector("#cp_pw");
+  const pw2 = wrap.querySelector("#cp_pw2");
+  const strength = wrap.querySelector("#cp_strength");
+
+  pw.addEventListener("input", () => {
+    strength.textContent = passwordStrengthHint(pw.value);
+    strength.className = "small " + (pw.value.length >= 12 ? "ok" : "");
+  });
+
+  wrap.querySelector("#cp_save").addEventListener("click", async () => {
+    const p1 = pw.value;
+    const p2 = pw2.value;
+
+    if (!p1 || p1.length < 8) return toast("Use a longer password (8+).", true);
+    if (p1 !== p2) return toast("Passwords do not match.", true);
+
+    if (state.readOnly) return toast("Cannot change password in Read-Only mode.", true);
+    if (!state.vaultData) return;
+
+    state.vaultData.updatedAt = new Date().toISOString();
+
+    try {
+      // Re-encrypt with NEW password
+      const fileJson = await reencryptVaultToFile(state.vaultData, p1, state.vaultMeta);
+      await downloadJson(fileJson, state.fileNameHint || "vault.json");
+      toast("Downloaded vault with NEW password.");
+
+      mode = "home";
+      render(appRoot, handlers);
+    } catch (e) {
+      toast(e?.message || "Failed to change password.", true);
+    }
+  });
+
+  return wrap;
+}
+
 /** ✅ handlers must be defined BEFORE first render */
 const handlers = {
   onGoCreate: () => {
@@ -256,8 +342,84 @@ const handlers = {
     appRoot.innerHTML = "";
     appRoot.appendChild(renderOpenScreen());
   },
+  onGoChangePassword: () => {
+    if (state.readOnly) return toast("Disabled in Read-Only Mode", true);
+    mode = "change-password";
+    appRoot.innerHTML = "";
+    appRoot.appendChild(renderChangePasswordScreen());
+  },
+
+  onGoQR: async () => {
+    if (state.readOnly) return toast("Disabled in Read-Only Mode", true);
+    if (!state.vaultData) return;
+
+    // Warn if qrcode lib missing
+    if (!window.qrcode) {
+      toast("QRCode library not loaded. Check connection or src/qrcode.js", true);
+      return;
+    }
+
+    const master = prompt("Enter master password to generate transfer QRs:");
+    if (!master) return;
+
+    try {
+      const fileJson = await reencryptVaultToFile(state.vaultData, master, state.vaultMeta);
+      const jsonStr = JSON.stringify(fileJson);
+
+      // Chunk it
+      const chunkSize = 800;
+      const totalLen = jsonStr.length;
+      const chunks = [];
+      const totalChunks = Math.ceil(totalLen / chunkSize);
+
+      for (let i = 0; i < totalChunks; i++) {
+        const chunk = jsonStr.slice(i * chunkSize, (i + 1) * chunkSize);
+        // Format: ZV1:index/total:data  (index is 1-based)
+        chunks.push(`ZV1:${i + 1}/${totalChunks}:${chunk}`);
+      }
+
+      qrState = { chunks, index: 0 };
+      renderQRModal(qrState.chunks, qrState.index, qrState.chunks.length, handlers);
+      armInactivity();
+    } catch (e) {
+      toast("Failed to encrypt for QR: " + e.message, true);
+    }
+  },
+
+  onNextQR: () => {
+    if (qrState.index < qrState.chunks.length - 1) {
+      qrState.index++;
+      renderQRModal(qrState.chunks, qrState.index, qrState.chunks.length, handlers);
+      armInactivity();
+    } else {
+      closeQRModal();
+      toast("Transfer finished.");
+    }
+  },
+
+  onPrevQR: () => {
+    if (qrState.index > 0) {
+      qrState.index--;
+      renderQRModal(qrState.chunks, qrState.index, qrState.chunks.length, handlers);
+      armInactivity();
+    }
+  },
+
+  onCloseQR: () => {
+    qrState = { chunks: [], index: 0 };
+    closeQRModal();
+    armInactivity();
+  },
+
+  onSwitchReadOnly: () => {
+    state.readOnly = true;
+    render(appRoot, handlers);
+    renderEditor(selectedEntryId ? getEntryById(selectedEntryId) : null, handlers);
+    toast("Switched to Emergency Read-Only Mode.");
+  },
 
   onAddEntry: () => {
+    if (state.readOnly) return toast("Action disabled in Emergency Read-Only Mode", true);
     const v = state.vaultData;
     if (!v) return;
     const now = new Date().toISOString();
@@ -292,10 +454,35 @@ const handlers = {
   },
 
   onSaveEntry: (id) => {
+    if (state.readOnly) return toast("Action disabled in Emergency Read-Only Mode", true);
     const e = getEntryById(id);
     if (!e) return;
 
     const vals = getEditorFormValues();
+
+    // Check if changes were actually made
+    const hasChanges = Object.keys(vals).some(k =>
+      JSON.stringify(vals[k]) !== JSON.stringify(e[k] || (Array.isArray(vals[k]) ? [] : ""))
+    );
+
+    if (hasChanges) {
+      // Versioning: Save current state to history before updating
+      e.history = e.history || [];
+      e.history.unshift({
+        savedAt: new Date().toISOString(),
+        snapshot: {
+          title: e.title,
+          url: e.url,
+          username: e.username,
+          password: e.password,
+          notes: e.notes,
+          tags: [...(e.tags || [])]
+        }
+      });
+      // Limit history to last 10 versions to save space
+      if (e.history.length > 10) e.history.length = 10;
+    }
+
     Object.assign(e, vals, { updatedAt: new Date().toISOString() });
 
     render(appRoot, handlers);
@@ -303,10 +490,87 @@ const handlers = {
     armInactivity();
   },
 
+  onRestoreHistory: (entryId, historyIndex) => {
+    if (state.readOnly) return toast("Action disabled in Emergency Read-Only Mode", true);
+    if (!confirm("Are you sure you want to restore this version? The current version will be saved to history.")) return;
+
+    const e = getEntryById(entryId);
+    if (!e || !e.history || !e.history[historyIndex]) return;
+
+    const versionToRestore = e.history[historyIndex];
+
+    // Save current state as history before restoring
+    e.history.unshift({
+      savedAt: new Date().toISOString(),
+      reason: "Rollback",
+      snapshot: {
+        title: e.title,
+        url: e.url,
+        username: e.username,
+        password: e.password,
+        notes: e.notes,
+        tags: [...(e.tags || [])]
+      }
+    });
+
+    // Apply restored snapshot
+    Object.assign(e, versionToRestore.snapshot, { updatedAt: new Date().toISOString() });
+
+    // Correct logic: we just unshifted, so the index might have shifted if we were pointing to a specific index, 
+    // but typically we just pull the data and push new history. 
+    // The previous history items remain secure.
+
+    // Clean up history limit
+    if (e.history.length > 20) e.history.length = 20;
+
+    render(appRoot, handlers);
+    renderEditor(getEntryById(entryId), handlers);
+    toast("Restored entry to previous version.");
+    armInactivity();
+  },
+
+  onToggleFavorite: (id) => {
+    if (state.readOnly) return;
+    const e = getEntryById(id);
+    if (e) {
+      e.isFavorite = !e.isFavorite;
+      e.updatedAt = new Date().toISOString();
+      render(appRoot, handlers);
+      // If editor is open for this item, re-render it to show state change if we add star there
+      if (selectedEntryId === id) renderEditor(e, handlers);
+    }
+    armInactivity();
+  },
+
+  onToggleFavoriteFilter: () => {
+    visibleFilter.favoritesOnly = !visibleFilter.favoritesOnly;
+    render(appRoot, handlers);
+    armInactivity();
+  },
+
+  onCopyUsername: async (id) => {
+    const e = getEntryById(id);
+    if (!e) return;
+    if (state.readOnly) return toast("Clipboard disabled in Emergency Read-Only Mode", true);
+
+    try {
+      await navigator.clipboard.writeText(e.username || "");
+      toast("Copied username.");
+      setTimeout(async () => {
+        // Best effort clear, though typically specialized for passwords.
+      }, 20000);
+    } catch {
+      toast("Clipboard copy failed.", true);
+    }
+    armInactivity();
+  },
+
   onDeleteEntry: (id) => {
+    if (state.readOnly) return toast("Action disabled in Emergency Read-Only Mode", true);
     const v = state.vaultData;
     if (!v) return;
     v.entries = v.entries.filter((x) => x.id !== id);
+    deletingEntryIds.delete(id);
     if (selectedEntryId === id) selectedEntryId = null;
     render(appRoot, handlers);
     renderEditor(selectedEntryId ? getEntryById(selectedEntryId) : null, handlers);
@@ -317,11 +581,13 @@ const handlers = {
     const e = getEntryById(id);
     if (!e) return;
 
+    if (state.readOnly) return toast("Clipboard disabled in Emergency Read-Only Mode", true);
+
     try {
       await navigator.clipboard.writeText(e.password || "");
       toast("Copied password to clipboard.");
       setTimeout(async () => {
-        try { await navigator.clipboard.writeText(""); } catch {}
+        try { await navigator.clipboard.writeText(""); } catch { }
       }, 20000);
     } catch {
       toast("Clipboard copy failed (browser permission).", true);
@@ -330,6 +596,7 @@ const handlers = {
   },
 
   onSaveDownload: async () => {
+    if (state.readOnly) return toast("Action disabled in Emergency Read-Only Mode", true);
     if (!state.vaultData) return;
 
     const master = prompt("Enter master password to re-encrypt and download:");
@@ -350,13 +617,16 @@ const handlers = {
   getVisibleEntries: () => {
     const v = state.vaultData;
     if (!v) return [];
-    const { q, tag } = visibleFilter;
+    const { q, tag, favoritesOnly } = visibleFilter;
     let out = [...(v.entries || [])];
 
+    if (favoritesOnly) {
+      out = out.filter(e => e.isFavorite);
+    }
     if (q) {
       const qq = q.toLowerCase();
       out = out.filter((e) => {
-        const hay = [e.title, e.url, e.username, e.notes, ...(e.tags || [])].join(" ").toLowerCase();
+        const hay = [e.title, e.url, e.username, e.notes, e.password, ...(e.tags || [])].join(" ").toLowerCase();
         return hay.includes(qq);
       });
     }
@@ -364,6 +634,13 @@ const handlers = {
       const tt = tag.toLowerCase();
       out = out.filter((e) => (e.tags || []).some((t) => t.toLowerCase() === tt));
     }
+
+    // Sort favorites to top by default if not filtering
+    out.sort((a, b) => {
+      if (a.isFavorite === b.isFavorite) return 0;
+      return a.isFavorite ? -1 : 1;
+    });
+
     return out;
   },
 
@@ -380,6 +657,35 @@ const handlers = {
     renderEditor(selectedEntryId ? getEntryById(selectedEntryId) : null, handlers);
     armInactivity();
   },
+
+  onTogglePassword: (id) => {
+    if (visiblePasswords.has(id)) {
+      visiblePasswords.delete(id);
+    } else {
+      visiblePasswords.add(id);
+    }
+    render(appRoot, handlers);
+    armInactivity();
+  },
+
+  isPasswordVisible: (id) => visiblePasswords.has(id),
+
+  isFavoritesFilterOn: () => !!visibleFilter.favoritesOnly,
+
+  onInitiateDelete: (id) => {
+    if (state.readOnly) return;
+    deletingEntryIds.add(id);
+    render(appRoot, handlers);
+    armInactivity();
+  },
+
+  onCancelDelete: (id) => {
+    deletingEntryIds.delete(id);
+    render(appRoot, handlers);
+    armInactivity();
+  },
+
+  isEntryDeleting: (id) => deletingEntryIds.has(id),
 };
 
 /** ✅ Now do initial render */

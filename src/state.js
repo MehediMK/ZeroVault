@@ -1,5 +1,6 @@
 export const state = {
   locked: true,
+  readOnly: false, // Emergency Read-Only Mode
   vaultMeta: null,   // { version, crypto }
   vaultData: null,   // decrypted object
   fileNameHint: "vault.json",
@@ -19,6 +20,7 @@ export function setUnlocked(meta, data) {
 
 export function wipeSensitive() {
   // Best-effort memory clearing: overwrite and drop references.
+  state.readOnly = false; // Reset read-only mode
   if (state.vaultData) {
     try {
       if (Array.isArray(state.vaultData.entries)) {

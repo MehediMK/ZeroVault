@@ -6,9 +6,12 @@ function el(tag, attrs = {}, children = []) {
     if (k === "class") n.className = v;
     else if (k === "text") n.textContent = v;
     else if (k.startsWith("on") && typeof v === "function") n.addEventListener(k.slice(2), v);
-    else n.setAttribute(k, v);
+    else if (k === "checked" || k === "disabled" || k === "selected" || k === "value") n[k] = v;
+    else if (v !== undefined && v !== null && v !== false) n.setAttribute(k, v);
   }
-  for (const c of children) n.appendChild(c);
+  for (const c of children) {
+    if (c) n.appendChild(c);
+  }
   return n;
 }
 
@@ -32,11 +35,11 @@ function renderLocked(handlers) {
   ]);
 
   const hint = el("div", { class: "card" }, [
-    el("h3", { text: "Security Notes" }),
+    el("h3", { text: "Security & Storage" }),
     el("ul", {}, [
-      el("li", { text: "All encryption/decryption happens in your browser only." }),
-      el("li", { text: "Nothing is stored in localStorage/IndexedDB/cookies." }),
-      el("li", { text: "You must download the encrypted JSON to keep changes." }),
+      el("li", { text: "Encryption happens entirely in your browser." }),
+      el("li", { text: "No Cloud API: This app has no server-side storage." }),
+      el("li", { text: "Manual Sync: Save the file to Drive/Dropbox to access it anywhere." }),
     ]),
   ]);
 
@@ -45,15 +48,28 @@ function renderLocked(handlers) {
 
 function renderUnlocked(handlers) {
   const { vaultData } = state;
+
+  const banner = state.readOnly
+    ? el("div", { class: "card", style: "border-left: 5px solid orange; background: #fff8e1; color: #b7791f;" }, [
+      el("strong", { text: "Emergency Read-Only Mode: " }),
+      el("span", { text: "Editing & Clipboard are disabled." })
+    ])
+    : null;
+
+  const actions = [
+    !state.readOnly ? el("button", { text: "Add Entry", onclick: handlers.onAddEntry }) : null,
+    !state.readOnly ? el("button", { class: "secondary", text: "Save & Download Vault JSON", onclick: handlers.onSaveDownload }) : null,
+    !state.readOnly ? el("button", { class: "secondary", text: "Change Master Password", onclick: handlers.onGoChangePassword }) : null,
+    !state.readOnly ? el("button", { class: "secondary", text: "Mobile Transfer (QR)", onclick: handlers.onGoQR }) : null,
+    !state.readOnly ? el("button", { class: "secondary", text: "Switch to Read-Only", onclick: handlers.onSwitchReadOnly }) : null,
+  ].filter(Boolean);
+
   const top = el("div", { class: "card" }, [
     el("div", { class: "inline" }, [
       el("span", { class: "badge", text: `Unlocked: ${vaultData.vaultName || "Vault"}` }),
       el("span", { class: "small", text: `Entries: ${vaultData.entries?.length ?? 0}` }),
     ]),
-    el("div", { class: "actions" }, [
-      el("button", { text: "Add Entry", onclick: handlers.onAddEntry }),
-      el("button", { class: "secondary", text: "Save & Download Vault JSON", onclick: handlers.onSaveDownload }),
-    ]),
+    el("div", { class: "actions" }, actions),
   ]);
 
   const searchRow = el("div", { class: "card" }, [
@@ -66,6 +82,12 @@ function renderUnlocked(handlers) {
       el("div", {}, [
         el("label", { text: "Filter by tag (optional)" }),
         el("input", { id: "searchTag", type: "text", placeholder: "e.g. work" }),
+      ]),
+      el("div", { style: "display:flex; align-items:flex-end;" }, [
+        el("label", { style: "cursor:pointer; display:flex; align-items:center; gap:5px;" }, [
+          el("input", { type: "checkbox", checked: handlers.isFavoritesFilterOn() ? "true" : undefined, onchange: handlers.onToggleFavoriteFilter }),
+          el("span", { text: "Favorites Only" })
+        ])
       ]),
     ]),
     el("div", { class: "actions" }, [
@@ -81,11 +103,11 @@ function renderUnlocked(handlers) {
 
   const editor = el("div", { class: "card" }, [
     el("h3", { text: "Entry Editor" }),
-    el("p", { class: "small", text: "Select an entry to edit, or click “Add Entry”." }),
+    el("p", { class: "small", text: "Select an entry to view details." }),
     el("div", { id: "editorHost" }),
   ]);
 
-  return el("div", {}, [top, searchRow, tableCard, editor]);
+  return el("div", {}, [banner, top, searchRow, tableCard, editor].filter(Boolean));
 }
 
 function renderEntriesTable(handlers) {
@@ -94,28 +116,63 @@ function renderEntriesTable(handlers) {
   const table = el("table", { class: "table" });
   const thead = el("thead", {}, [
     el("tr", {}, [
+      el("th", { text: "" }), // Star col
       el("th", { text: "Title" }),
       el("th", { text: "URL" }),
       el("th", { text: "Username" }),
       el("th", { text: "Tags" }),
+      el("th", { text: "Password" }),
       el("th", { text: "Actions" }),
     ]),
   ]);
 
   const tbody = el("tbody");
   for (const e of entries) {
+    const deleteActions = handlers.isEntryDeleting(e.id)
+      ? [
+        el("button", { class: "danger", text: "Confirm", onclick: () => handlers.onDeleteEntry(e.id) }),
+        el("button", { class: "secondary", text: "Cancel", onclick: () => handlers.onCancelDelete(e.id) }),
+      ]
+      : [
+        !state.readOnly ? el("button", { class: "danger", text: "Delete", onclick: () => handlers.onInitiateDelete(e.id) }) : null,
+      ];
+
     const actions = el("div", { class: "inline" }, [
-      el("button", { class: "secondary", text: "Edit", onclick: () => handlers.onEditEntry(e.id) }),
-      el("button", { class: "secondary", text: "Copy Password", onclick: () => handlers.onCopyPassword(e.id) }),
-      el("button", { class: "danger", text: "Delete", onclick: () => handlers.onDeleteEntry(e.id) }),
-    ]);
+      el("button", { class: "secondary", text: state.readOnly ? "View" : "Edit", onclick: () => handlers.onEditEntry(e.id) }),
+      !state.readOnly ? el("button", { class: "secondary", text: "Copy Password", onclick: () => handlers.onCopyPassword(e.id) }) : null,
+      ...deleteActions
+    ].filter(Boolean));
 
     tbody.appendChild(
       el("tr", {}, [
+        el("td", {}, [
+          el("span", {
+            text: e.isFavorite ? "★" : "☆",
+            style: `cursor:pointer; font-size: 1.2em; color: ${e.isFavorite ? "#ffc107" : "#ccc"}`,
+            title: "Toggle Favorite",
+            onclick: () => handlers.onToggleFavorite(e.id)
+          })
+        ]),
         el("td", { text: e.title || "" }),
         el("td", { text: e.url || "" }),
-        el("td", { text: e.username || "" }),
+        el("td", {}, [
+          el("div", { class: "inline" }, [
+            el("span", { text: e.username || "" }),
+            e.username ? el("button", { class: "small secondary", text: "📋", title: "Copy Username", onclick: () => handlers.onCopyUsername(e.id) }) : null
+          ])
+        ]),
         el("td", { text: (e.tags || []).join(", ") }),
+        el("td", {}, [
+          el("div", { style: "display: flex; align-items: center; gap: 8px;" }, [
+            el("span", { text: handlers.isPasswordVisible(e.id) ? (e.password || "") : "••••••••" }),
+            el("button", {
+              class: "small secondary",
+              style: "padding: 2px 6px; min-width: auto;",
+              text: handlers.isPasswordVisible(e.id) ? "🙈" : "👁️",
+              onclick: () => handlers.onTogglePassword(e.id)
+            })
+          ])
+        ]),
         el("td", {}, [actions]),
       ])
     );
@@ -138,49 +195,76 @@ export function renderEditor(entryOrNull, handlers) {
 
   const e = entryOrNull;
 
+  const isRO = state.readOnly;
+  const inputAttrs = (base) => {
+    if (isRO) base.disabled = "true";
+    return base;
+  };
+
   const form = el("div", {}, [
     el("div", { class: "row" }, [
       el("div", {}, [
         el("label", { text: "Title" }),
-        el("input", { id: "f_title", type: "text", value: e.title || "", autocomplete: "off" }),
+        el("input", inputAttrs({ id: "f_title", type: "text", value: e.title || "", autocomplete: "off" })),
       ]),
       el("div", {}, [
         el("label", { text: "URL" }),
-        el("input", { id: "f_url", type: "text", value: e.url || "", autocomplete: "off" }),
+        el("input", inputAttrs({ id: "f_url", type: "text", value: e.url || "", autocomplete: "off" })),
       ]),
     ]),
     el("div", { class: "row" }, [
       el("div", {}, [
         el("label", { text: "Username / Email" }),
-        el("input", { id: "f_username", type: "text", value: e.username || "", autocomplete: "off" }),
+        el("input", inputAttrs({ id: "f_username", type: "text", value: e.username || "", autocomplete: "off" })),
       ]),
       el("div", {}, [
         el("label", { text: "Password" }),
-        el("input", { id: "f_password", type: "password", value: e.password || "", autocomplete: "new-password" }),
+        el("input", inputAttrs({ id: "f_password", type: "password", value: e.password || "", autocomplete: "new-password" })),
       ]),
     ]),
     el("div", { class: "row" }, [
       el("div", {}, [
         el("label", { text: "Tags (comma-separated)" }),
-        el("input", { id: "f_tags", type: "text", value: (e.tags || []).join(", "), autocomplete: "off" }),
+        el("input", inputAttrs({ id: "f_tags", type: "text", value: (e.tags || []).join(", "), autocomplete: "off" })),
       ]),
       el("div", {}, [
         el("label", { text: "Notes" }),
-        el("textarea", { id: "f_notes", autocomplete: "off" }, []),
+        el("textarea", inputAttrs({ id: "f_notes", autocomplete: "off" }), []),
       ]),
     ]),
     el("div", { class: "actions" }, [
-      el("button", { text: "Save Entry", onclick: () => handlers.onSaveEntry(e.id) }),
-      el("button", { class: "secondary", text: "Cancel", onclick: handlers.onCancelEdit }),
-    ]),
+      !isRO ? el("button", { text: "Save Entry", onclick: () => handlers.onSaveEntry(e.id) }) : null,
+      el("button", { class: "secondary", text: isRO ? "Close" : "Cancel", onclick: handlers.onCancelEdit }),
+    ].filter(Boolean)),
     el("div", { class: "hr" }),
-    el("p", { class: "small", text: "Remember: changes are only stored after “Save & Download Vault JSON”." }),
+    !isRO
+      ? el("p", { class: "small", text: "Remember: changes are only stored after “Save & Download Vault JSON”." })
+      : el("p", { class: "small", text: "Read-only mode enabled." }),
   ]);
 
   host.appendChild(form);
 
   const notes = document.getElementById("f_notes");
   if (notes) notes.value = e.notes || "";
+
+  // History Section
+  if (e.history && e.history.length > 0) {
+    const historyCard = el("div", { style: "margin-top: 20px; padding-top: 10px; border-top: 1px solid #ccc;" }, [
+      el("h4", { text: "Version History" }),
+      el("ul", { class: "small", style: "list-style: none; padding: 0;" }, e.history.map((h, idx) => {
+        const dateStr = new Date(h.savedAt).toLocaleString();
+        return el("li", { style: "margin-bottom: 8px; padding: 8px; background: #eee; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;" }, [
+          el("span", { text: `${dateStr} ${h.reason ? '(' + h.reason + ')' : ''}` }),
+          !isRO ? el("button", {
+            class: "small secondary",
+            text: "Restore",
+            onclick: () => handlers.onRestoreHistory(e.id, idx)
+          }) : null
+        ]);
+      }))
+    ]);
+    form.appendChild(historyCard);
+  }
 }
 
 export function getEditorFormValues() {
@@ -201,4 +285,55 @@ export function getSearchValues() {
   const q = document.getElementById("searchQuery")?.value ?? "";
   const tag = document.getElementById("searchTag")?.value ?? "";
   return { q: q.trim(), tag: tag.trim() };
+}
+
+export function renderQRModal(chunks, index, total, handlers) {
+  // Use existing overlay or create one
+  let overlay = document.getElementById("qr-overlay");
+  if (!overlay) {
+    overlay = el("div", { id: "qr-overlay", style: "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:9999;display:flex;align-items:center;justify-content:center;" });
+    document.body.appendChild(overlay);
+  }
+  overlay.innerHTML = "";
+
+  const chunkData = chunks[index];
+
+  // Generate QR
+  let qrHtml = "";
+  try {
+    if (window.qrcode) {
+      const typeNumber = 0; // Auto detection
+      const errorCorrectionLevel = 'L';
+      const qr = window.qrcode(typeNumber, errorCorrectionLevel);
+      qr.addData(chunkData);
+      qr.make();
+      qrHtml = qr.createImgTag(5, 10); // cell size, margin
+    } else {
+      qrHtml = "<p>QR Library not found. Check src/qrcode.js</p>";
+    }
+  } catch (e) {
+    qrHtml = `<p class='error'>Error: ${e.message}</p>`;
+  }
+
+  const card = el("div", { class: "card", style: "max-width: 500px; text-align: center; background: white; color: black;" }, [
+    el("h2", { text: `Mobile Transfer (${index + 1}/${total})` }),
+    el("p", { text: "Scan this code with the ZeroVault mobile app (or text scanner)." }),
+    el("div", { style: "margin: 20px 0;" }, []), // placeholder for QR
+    el("div", { class: "actions", style: "justify-content: center;" }, [
+      el("button", { class: "secondary", text: "Previous", onclick: handlers.onPrevQR, disabled: index === 0 ? "true" : undefined }),
+      el("button", { text: index === total - 1 ? "Finish" : "Next", onclick: handlers.onNextQR }),
+      el("button", { class: "secondary", text: "Close", onclick: handlers.onCloseQR }),
+    ]),
+    el("p", { class: "small", text: `Chunk Size: ${chunkData.length} chars` })
+  ]);
+
+  // Inject HTML string for QR image
+  card.children[2].innerHTML = qrHtml;
+
+  overlay.appendChild(card);
+}
+
+export function closeQRModal() {
+  const overlay = document.getElementById("qr-overlay");
+  if (overlay) overlay.remove();
 }
