@@ -32,11 +32,11 @@ function renderLocked(handlers) {
   ]);
 
   const hint = el("div", { class: "card" }, [
-    el("h3", { text: "Security Notes" }),
+    el("h3", { text: "Security & Storage" }),
     el("ul", {}, [
-      el("li", { text: "All encryption/decryption happens in your browser only." }),
-      el("li", { text: "Nothing is stored in localStorage/IndexedDB/cookies." }),
-      el("li", { text: "You must download the encrypted JSON to keep changes." }),
+      el("li", { text: "Encryption happens entirely in your browser." }),
+      el("li", { text: "No Cloud API: This app has no server-side storage." }),
+      el("li", { text: "Manual Sync: Save the file to Drive/Dropbox to access it anywhere." }),
     ]),
   ]);
 
@@ -56,6 +56,7 @@ function renderUnlocked(handlers) {
   const actions = [
     !state.readOnly ? el("button", { text: "Add Entry", onclick: handlers.onAddEntry }) : null,
     !state.readOnly ? el("button", { class: "secondary", text: "Save & Download Vault JSON", onclick: handlers.onSaveDownload }) : null,
+    !state.readOnly ? el("button", { class: "secondary", text: "Change Master Password", onclick: handlers.onGoChangePassword }) : null,
     !state.readOnly ? el("button", { class: "secondary", text: "Switch to Read-Only", onclick: handlers.onSwitchReadOnly }) : null,
   ].filter(Boolean);
 

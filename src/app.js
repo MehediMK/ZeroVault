@@ -107,7 +107,7 @@ function renderCreateScreen() {
       Your master password is never stored. If you forget it, the vault cannot be recovered.
     </p>
     <p class="small">
-      No data is stored in your browser. You must keep the downloaded JSON safe.
+      No data is stored in the browser. Save the file to Drive/Dropbox/iCloud to prevent loss and sync devices.
     </p>
   `;
 
@@ -258,6 +258,75 @@ function passwordStrengthHint(pw) {
   return "Strong.";
 }
 
+function renderChangePasswordScreen() {
+  const wrap = document.createElement("div");
+  wrap.className = "card";
+  wrap.innerHTML = `
+    <h2>Change Master Password</h2>
+    <div class="row">
+      <div>
+        <label>New Master Password</label>
+        <input id="cp_pw" type="password" autocomplete="new-password" />
+        <div class="small" id="cp_strength"></div>
+      </div>
+      <div>
+        <label>Confirm New Password</label>
+        <input id="cp_pw2" type="password" autocomplete="new-password" />
+      </div>
+    </div>
+    <div class="actions">
+      <button id="cp_save">Change & Download Vault</button>
+      <button class="secondary" id="cp_back">Cancel</button>
+    </div>
+    <p class="small">
+      This will re-encrypt your <b>entire vault</b> with the new password and download it as a new file.
+      <br>
+      Please delete the old file after verifying the new one works.
+    </p>
+  `;
+
+  wrap.querySelector("#cp_back").addEventListener("click", () => {
+    mode = "home";
+    render(appRoot, handlers);
+  });
+
+  const pw = wrap.querySelector("#cp_pw");
+  const pw2 = wrap.querySelector("#cp_pw2");
+  const strength = wrap.querySelector("#cp_strength");
+
+  pw.addEventListener("input", () => {
+    strength.textContent = passwordStrengthHint(pw.value);
+    strength.className = "small " + (pw.value.length >= 12 ? "ok" : "");
+  });
+
+  wrap.querySelector("#cp_save").addEventListener("click", async () => {
+    const p1 = pw.value;
+    const p2 = pw2.value;
+
+    if (!p1 || p1.length < 8) return toast("Use a longer password (8+).", true);
+    if (p1 !== p2) return toast("Passwords do not match.", true);
+
+    if (state.readOnly) return toast("Cannot change password in Read-Only mode.", true);
+    if (!state.vaultData) return;
+
+    state.vaultData.updatedAt = new Date().toISOString();
+
+    try {
+      // Re-encrypt with NEW password
+      const fileJson = await reencryptVaultToFile(state.vaultData, p1, state.vaultMeta);
+      await downloadJson(fileJson, state.fileNameHint || "vault.json");
+      toast("Downloaded vault with NEW password.");
+
+      mode = "home";
+      render(appRoot, handlers);
+    } catch (e) {
+      toast(e?.message || "Failed to change password.", true);
+    }
+  });
+
+  return wrap;
+}
+
 /** ✅ handlers must be defined BEFORE first render */
 const handlers = {
   onGoCreate: () => {
@@ -269,6 +338,12 @@ const handlers = {
     mode = "open";
     appRoot.innerHTML = "";
     appRoot.appendChild(renderOpenScreen());
+  },
+  onGoChangePassword: () => {
+    if (state.readOnly) return toast("Disabled in Read-Only Mode", true);
+    mode = "change-password";
+    appRoot.innerHTML = "";
+    appRoot.appendChild(renderChangePasswordScreen());
   },
 
   onSwitchReadOnly: () => {
