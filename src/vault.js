@@ -8,6 +8,8 @@ function createDefaultSettings() {
       clipboardClearMs: 20000,
       preferredKdf: "PBKDF2",
       lockOnHide: false,
+      sensitiveRevealMs: 30000,
+      allowSensitiveCopy: false,
     },
   };
 }
@@ -40,6 +42,7 @@ function normalizeEntry(entry = {}) {
     createdAt: entry.createdAt || now,
     updatedAt: entry.updatedAt || now,
     lastPasswordChangeAt: entry.lastPasswordChangeAt || entry.updatedAt || now,
+    validationIssues: Array.isArray(entry.validationIssues) ? entry.validationIssues : [],
   };
 }
 
@@ -58,6 +61,7 @@ function normalizeVaultData(data) {
       },
     },
     saveHistory: Array.isArray(data.saveHistory) ? data.saveHistory : [],
+    snapshots: Array.isArray(data.snapshots) ? data.snapshots : [],
     entries: Array.isArray(data.entries) ? data.entries.map(normalizeEntry) : [],
   };
 }

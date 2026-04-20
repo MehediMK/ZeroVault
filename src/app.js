@@ -1,9 +1,11 @@
-import { state, setUnlocked, wipeSensitive, resetInactivityTimer, isUnlocked, markDirty, markSaved, syncSettingsFromVault, rememberUndoSnapshot, clearUndoSnapshot } from "./state.js";
+import { state, setUnlocked, wipeSensitive, resetInactivityTimer, isUnlocked, markDirty, markSaved, syncSettingsFromVault, pushHistorySnapshot, popHistorySnapshot, clearHistorySnapshots } from "./state.js";
 import { render, renderEditor, getEditorFormValues, getSearchValues, renderQRModal, closeQRModal } from "./ui.js";
 import { auditVault, generatePassword, passwordStrengthHint } from "./features/passwords.js";
 import { importEntriesFromFile } from "./features/importers.js";
 import { generateTotpCode, isValidTotpSecret, secretFromText } from "./features/totp.js";
 import { getArgon2Support } from "./features/kdf.js";
+import { validateEntry } from "./features/validation.js";
+import { buildAuditExport, buildVaultSummaryExport, buildRecoverySheetHtml } from "./features/reports.js";
 import {
   newEmptyVaultPayload,
   createEncryptedVaultFile,
@@ -16,11 +18,12 @@ import {
 
 const appRoot = document.getElementById("app");
 const lockBtn = document.getElementById("lockBtn");
+const PAGE_SIZE = 10;
+const SENSITIVE_FIELDS = ["title", "url", "username", "password", "notes", "details", "recoveryCodes", "attachmentRefs", "totpSecret"];
 
 let selectedEntryId = null;
 let visibleFilter = defaultFilterState();
 let currentPage = 1;
-const PAGE_SIZE = 10;
 let deletingEntryIds = new Set();
 let qrState = { chunks: [], index: 0 };
 let keyboardNavIndex = -1;
@@ -28,7 +31,7 @@ let mode = "home";
 let totpIntervalId = null;
 let totpCache = new Map();
 let bulkSelectedIds = new Set();
-let sensitiveRevealIds = new Set();
+let sensitiveRevealFields = new Map();
 let sensitiveRevealTimers = new Map();
 let importPreview = [];
 let importPreviewSelection = new Set();
@@ -57,16 +60,14 @@ function defaultFilterState() {
   };
 }
 
-function updateLockButton() {
-  lockBtn.disabled = !isUnlocked();
-}
-
 function getSecuritySettings() {
   return state.vaultData?.settings?.security || {
     inactivityMs: 2 * 60 * 1000,
     clipboardClearMs: 20000,
     preferredKdf: "PBKDF2",
     lockOnHide: false,
+    sensitiveRevealMs: 30000,
+    allowSensitiveCopy: false,
   };
 }
 
@@ -76,6 +77,10 @@ function setSecuritySettings(nextSecurity) {
   state.vaultData.settings.security = { ...getSecuritySettings(), ...nextSecurity };
   syncSettingsFromVault();
   state.upgradeAvailable = state.vaultMeta?.crypto?.kdf !== state.vaultData.settings.security.preferredKdf;
+}
+
+function updateLockButton() {
+  lockBtn.disabled = !isUnlocked();
 }
 
 function armInactivity() {
@@ -101,10 +106,117 @@ function rerender() {
   updateLockButton();
 }
 
+function toast(message, isError = false) {
+  const existing = document.getElementById("toast");
+  if (existing) existing.remove();
+  const node = document.createElement("div");
+  node.id = "toast";
+  node.className = "card";
+  node.style.position = "fixed";
+  node.style.right = "18px";
+  node.style.bottom = "18px";
+  node.style.maxWidth = "420px";
+  node.style.zIndex = 9999;
+  node.setAttribute("role", "status");
+  node.setAttribute("aria-live", "polite");
+  node.innerHTML = `<div class="${isError ? "error" : "ok"}">${String(message).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]))}</div><div class="small muted">This message disappears automatically.</div>`;
+  document.body.appendChild(node);
+  setTimeout(() => node.remove(), 3600);
+}
+
+function cloneSnapshot(entry) {
+  return {
+    title: entry.title,
+    url: entry.url,
+    username: entry.username,
+    password: entry.password,
+    notes: entry.notes,
+    tags: [...(entry.tags || [])],
+    details: { ...(entry.details || {}) },
+    recoveryCodes: [...(entry.recoveryCodes || [])],
+    attachmentRefs: [...(entry.attachmentRefs || [])],
+    totpSecret: entry.totpSecret || "",
+    totpDigits: entry.totpDigits || 6,
+    totpPeriod: entry.totpPeriod || 30,
+    category: entry.category || "login",
+    isSensitive: !!entry.isSensitive,
+    passwordExpiryDays: Number(entry.passwordExpiryDays || 0) || 0,
+  };
+}
+
+function cloneVaultState() {
+  return {
+    vaultData: structuredClone(state.vaultData),
+    selectedEntryId,
+    visibleFilter: { ...visibleFilter },
+    currentPage,
+    bulkSelectedIds: Array.from(bulkSelectedIds),
+  };
+}
+
+function rememberUndo(action, note = "") {
+  if (!state.vaultData) return;
+  pushHistorySnapshot({
+    action,
+    note,
+    savedAt: new Date().toISOString(),
+    snapshot: cloneVaultState(),
+  });
+}
+
+function restoreUndoSnapshot(snapshot) {
+  if (!snapshot?.snapshot?.vaultData) return false;
+  state.vaultData = structuredClone(snapshot.snapshot.vaultData);
+  selectedEntryId = snapshot.snapshot.selectedEntryId || null;
+  visibleFilter = { ...defaultFilterState(), ...(snapshot.snapshot.visibleFilter || {}) };
+  currentPage = snapshot.snapshot.currentPage || 1;
+  bulkSelectedIds = new Set(snapshot.snapshot.bulkSelectedIds || []);
+  clearSensitiveReveals();
+  updateVaultTimestamp();
+  rerender();
+  return true;
+}
+
+function updateVaultTimestamp() {
+  if (state.vaultData) state.vaultData.updatedAt = new Date().toISOString();
+}
+
 function clearSensitiveReveals() {
   for (const timer of sensitiveRevealTimers.values()) clearTimeout(timer);
   sensitiveRevealTimers.clear();
-  sensitiveRevealIds.clear();
+  sensitiveRevealFields.clear();
+}
+
+function clearSensitiveRevealField(id, field) {
+  const key = `${id}:${field}`;
+  if (sensitiveRevealTimers.has(key)) clearTimeout(sensitiveRevealTimers.get(key));
+  sensitiveRevealTimers.delete(key);
+  const set = sensitiveRevealFields.get(id);
+  if (!set) return;
+  set.delete(field);
+  if (!set.size) sensitiveRevealFields.delete(id);
+}
+
+function revealSensitiveField(id, field) {
+  const set = sensitiveRevealFields.get(id) || new Set();
+  set.add(field);
+  sensitiveRevealFields.set(id, set);
+  const key = `${id}:${field}`;
+  if (sensitiveRevealTimers.has(key)) clearTimeout(sensitiveRevealTimers.get(key));
+  sensitiveRevealTimers.set(key, setTimeout(() => {
+    clearSensitiveRevealField(id, field);
+    if (selectedEntryId === id) renderEditor(getEntryById(id), handlers);
+    rerender();
+  }, getSecuritySettings().sensitiveRevealMs || 30000));
+}
+
+function isFieldRevealed(id, field) {
+  return !!sensitiveRevealFields.get(id)?.has(field);
+}
+
+function isEntryFullyRevealed(id) {
+  const set = sensitiveRevealFields.get(id);
+  return !!set && SENSITIVE_FIELDS.every((field) => set.has(field));
 }
 
 function lockNow(message = "") {
@@ -127,44 +239,6 @@ function lockNow(message = "") {
   mode = "home";
   rerender();
   if (message) toast(message);
-}
-
-function toast(message, isError = false) {
-  const existing = document.getElementById("toast");
-  if (existing) existing.remove();
-  const node = document.createElement("div");
-  node.id = "toast";
-  node.className = "card";
-  node.style.position = "fixed";
-  node.style.right = "18px";
-  node.style.bottom = "18px";
-  node.style.maxWidth = "420px";
-  node.style.zIndex = 9999;
-  node.setAttribute("role", "status");
-  node.setAttribute("aria-live", "polite");
-  node.innerHTML = `<div class="${isError ? "error" : "ok"}">${String(message).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]))}</div><div class="small muted">This message disappears automatically.</div>`;
-  document.body.appendChild(node);
-  setTimeout(() => node.remove(), 3200);
-}
-
-function cloneSnapshot(entry) {
-  return {
-    title: entry.title,
-    url: entry.url,
-    username: entry.username,
-    password: entry.password,
-    notes: entry.notes,
-    tags: [...(entry.tags || [])],
-    details: { ...(entry.details || {}) },
-    recoveryCodes: [...(entry.recoveryCodes || [])],
-    attachmentRefs: [...(entry.attachmentRefs || [])],
-    totpSecret: entry.totpSecret || "",
-    totpDigits: entry.totpDigits || 6,
-    totpPeriod: entry.totpPeriod || 30,
-    category: entry.category || "login",
-    isSensitive: !!entry.isSensitive,
-    passwordExpiryDays: Number(entry.passwordExpiryDays || 0) || 0,
-  };
 }
 
 function getEntryById(id) {
@@ -198,6 +272,7 @@ function normalizeImportedEntry(entry) {
     createdAt: now,
     updatedAt: now,
     lastPasswordChangeAt: now,
+    validationIssues: validateEntry(entry),
   };
 }
 
@@ -211,14 +286,6 @@ function getAudit() {
 
 function getEntryAudit(id) {
   return getAudit().items.find((item) => item.id === id) || { issues: [], score: 0 };
-}
-
-function getVisibleEntries() {
-  const filtered = getFilteredEntries();
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  if (currentPage > totalPages) currentPage = totalPages;
-  const start = (currentPage - 1) * PAGE_SIZE;
-  return filtered.slice(start, start + PAGE_SIZE);
 }
 
 function getFilteredEntries() {
@@ -256,6 +323,14 @@ function getFilteredEntries() {
   return out;
 }
 
+function getVisibleEntries() {
+  const filtered = getFilteredEntries();
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  if (currentPage > totalPages) currentPage = totalPages;
+  const start = (currentPage - 1) * PAGE_SIZE;
+  return filtered.slice(start, start + PAGE_SIZE);
+}
+
 function getPaginationSummary() {
   const totalItems = getFilteredEntries().length;
   const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
@@ -273,13 +348,14 @@ function getPaginationSummary() {
 function syncPageToEntry(id) {
   const filtered = getFilteredEntries();
   const index = filtered.findIndex((entry) => entry.id === id);
-  if (index >= 0) {
-    currentPage = Math.floor(index / PAGE_SIZE) + 1;
-  }
+  if (index >= 0) currentPage = Math.floor(index / PAGE_SIZE) + 1;
 }
 
-async function copyWithAutoClear(value, label) {
+async function copyWithAutoClear(value, label, options = {}) {
   if (state.readOnly) return toast("Clipboard disabled in Emergency Read-Only Mode.", true);
+  if (options.isSensitive && !getSecuritySettings().allowSensitiveCopy) {
+    return toast("Sensitive copying is disabled in security settings.", true);
+  }
   try {
     await navigator.clipboard.writeText(value || "");
     toast(`${label} copied to clipboard.`);
@@ -321,10 +397,6 @@ async function refreshTotpCache() {
   totpCache = next;
 }
 
-function updateVaultTimestamp() {
-  if (state.vaultData) state.vaultData.updatedAt = new Date().toISOString();
-}
-
 function summarizeChanges() {
   const c = state.changeLog || {};
   return [c.added ? `${c.added} new` : "", c.edited ? `${c.edited} edited` : "", c.deleted ? `${c.deleted} deleted` : "", c.archived ? `${c.archived} archived` : "", c.imported ? `${c.imported} imported` : ""].filter(Boolean).join(", ");
@@ -350,38 +422,88 @@ function applyGeneratedPasswordToEditor(password) {
   if (input) input.value = password;
 }
 
-function normalizeConflictKey(entry) {
-  return [entry.title || "", entry.username || "", entry.url || ""].map((v) => String(v).trim().toLowerCase()).join("|");
+function tryParseUrlHost(value) {
+  try {
+    return new URL(value).hostname.replace(/^www\./, "").toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function scoreConflictMatch(entry, candidate) {
+  let score = 0;
+  if ((entry.title || "").trim().toLowerCase() === (candidate.title || "").trim().toLowerCase() && entry.title) score += 3;
+  if ((entry.username || "").trim().toLowerCase() === (candidate.username || "").trim().toLowerCase() && entry.username) score += 3;
+  if (tryParseUrlHost(entry.url) && tryParseUrlHost(entry.url) === tryParseUrlHost(candidate.url)) score += 4;
+  if ((entry.password || "") && entry.password === candidate.password) score += 1;
+  if ((entry.category || "login") === (candidate.category || "login")) score += 1;
+  return score;
 }
 
 function findConflicts(entry) {
-  const key = normalizeConflictKey(entry);
-  if (!key.replace(/\|/g, "")) return [];
-  return (state.vaultData?.entries || []).filter((candidate) => normalizeConflictKey(candidate) === key);
-}
-
-function cloneEntriesSnapshot(entryIds = null) {
   return (state.vaultData?.entries || [])
-    .filter((entry) => !entryIds || entryIds.has(entry.id))
-    .map((entry) => structuredClone(entry));
+    .map((candidate) => ({
+      id: candidate.id,
+      title: candidate.title || "(Untitled)",
+      username: candidate.username || "",
+      category: candidate.category || "login",
+      score: scoreConflictMatch(entry, candidate),
+    }))
+    .filter((match) => match.score >= 4)
+    .sort((a, b) => b.score - a.score);
 }
 
-function rememberUndo(action, entryIds = null) {
-  rememberUndoSnapshot({
-    action,
-    entries: cloneEntriesSnapshot(entryIds),
+function createSnapshotRecord(name, reason = "manual") {
+  if (!state.vaultData) return null;
+  const snapshotVault = structuredClone(state.vaultData);
+  snapshotVault.snapshots = [];
+  const snapshot = {
+    id: crypto.randomUUID(),
+    name: name || `Snapshot ${new Date().toLocaleString()}`,
+    reason,
+    createdAt: new Date().toISOString(),
+    vaultData: snapshotVault,
+  };
+  state.vaultData.snapshots = state.vaultData.snapshots || [];
+  state.vaultData.snapshots.unshift(snapshot);
+  if (state.vaultData.snapshots.length > 20) state.vaultData.snapshots.length = 20;
+  return snapshot;
+}
+
+function rememberSaveHistory(fileName, snapshotName = "") {
+  state.vaultData.saveHistory = state.vaultData.saveHistory || [];
+  state.vaultData.saveHistory.unshift({
+    id: crypto.randomUUID(),
+    fileName,
     savedAt: new Date().toISOString(),
+    snapshotName,
   });
+  if (state.vaultData.saveHistory.length > 25) state.vaultData.saveHistory.length = 25;
 }
 
-function armSensitiveReveal(id) {
-  if (sensitiveRevealTimers.has(id)) clearTimeout(sensitiveRevealTimers.get(id));
-  sensitiveRevealTimers.set(id, setTimeout(() => {
-    sensitiveRevealIds.delete(id);
-    sensitiveRevealTimers.delete(id);
-    if (selectedEntryId === id) renderEditor(getEntryById(id), handlers);
-    rerender();
-  }, 30000));
+function downloadBlob(content, type, filename) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function openPrintableHtml(html) {
+  const popup = window.open("", "_blank", "noopener,noreferrer,width=960,height=720");
+  if (!popup) {
+    toast("Popup blocked. Allow popups to print the recovery sheet.", true);
+    return;
+  }
+  popup.document.open();
+  popup.document.write(html);
+  popup.document.close();
+  popup.focus();
+  popup.print();
 }
 
 function renderCreateScreen() {
@@ -399,7 +521,7 @@ function renderCreateScreen() {
       <div><label>Confirm Master Password</label><input id="cv_pw2" type="password" autocomplete="new-password" /></div>
     </div>
     <div class="row">
-      <div><label>Preferred KDF</label><select id="cv_kdf"><option value="PBKDF2">PBKDF2</option><option value="Argon2id" ${argon2.available ? "" : "disabled"}>Argon2id ${argon2.available ? "" : "(adapter missing)"}</option></select></div>
+      <div><label>Preferred KDF</label><select id="cv_kdf"><option value="PBKDF2">PBKDF2</option><option value="Argon2id" ${argon2.available ? "" : "disabled"}>Argon2id ${argon2.available ? "" : "(runtime unavailable)"}</option></select><div class="small muted">${argon2.available ? "Argon2id runtime detected." : argon2.reason}</div></div>
       <div><label>Auto-lock timeout</label><select id="cv_timeout"><option value="60000">1 minute</option><option value="120000" selected>2 minutes</option><option value="300000">5 minutes</option><option value="900000">15 minutes</option></select></div>
     </div>
     <div class="actions"><button id="cv_create">Create & Download Vault</button><button class="secondary" id="cv_back">Back</button></div>
@@ -480,8 +602,12 @@ function renderSecurityScreen() {
       <div><label>Clipboard clear delay (seconds)</label><input id="sv_clipboard" type="number" min="5" max="120" value="${Math.round((security.clipboardClearMs || 20000) / 1000)}" /></div>
     </div>
     <div class="row">
-      <div><label>Preferred KDF for next save</label><select id="sv_kdf"><option value="PBKDF2" ${security.preferredKdf === "PBKDF2" ? "selected" : ""}>PBKDF2</option><option value="Argon2id" ${security.preferredKdf === "Argon2id" ? "selected" : ""} ${argon2.available ? "" : "disabled"}>Argon2id ${argon2.available ? "" : "(adapter missing)"}</option></select></div>
+      <div><label>Reveal timeout (seconds)</label><input id="sv_reveal" type="number" min="5" max="300" value="${Math.round((security.sensitiveRevealMs || 30000) / 1000)}" /></div>
+      <div><label>Preferred KDF for next save</label><select id="sv_kdf"><option value="PBKDF2" ${security.preferredKdf === "PBKDF2" ? "selected" : ""}>PBKDF2</option><option value="Argon2id" ${security.preferredKdf === "Argon2id" ? "selected" : ""} ${argon2.available ? "" : "disabled"}>Argon2id ${argon2.available ? "" : "(runtime unavailable)"}</option></select><div class="small muted">${argon2.available ? "Argon2id runtime detected." : argon2.reason}</div></div>
+    </div>
+    <div class="row">
       <div><label class="inline wrap" style="margin-top:28px; gap:8px;"><input id="sv_hide" type="checkbox" style="width:auto;" ${security.lockOnHide ? "checked" : ""} /><span>Lock immediately when tab is hidden</span></label></div>
+      <div><label class="inline wrap" style="margin-top:28px; gap:8px;"><input id="sv_sensitive_copy" type="checkbox" style="width:auto;" ${security.allowSensitiveCopy ? "checked" : ""} /><span>Allow copy from sensitive fields after reveal</span></label></div>
     </div>
     <div class="actions"><button id="sv_save">Save Settings</button><button class="secondary" id="sv_back">Back</button></div>
   `;
@@ -490,8 +616,10 @@ function renderSecurityScreen() {
     setSecuritySettings({
       inactivityMs: Math.max(1, Number(wrap.querySelector("#sv_timeout").value) || 2) * 60000,
       clipboardClearMs: Math.max(5, Number(wrap.querySelector("#sv_clipboard").value) || 20) * 1000,
+      sensitiveRevealMs: Math.max(5, Number(wrap.querySelector("#sv_reveal").value) || 30) * 1000,
       preferredKdf: wrap.querySelector("#sv_kdf").value,
       lockOnHide: wrap.querySelector("#sv_hide").checked,
+      allowSensitiveCopy: wrap.querySelector("#sv_sensitive_copy").checked,
     });
     markDirty("edited");
     mode = "home";
@@ -507,7 +635,7 @@ function renderImportScreen() {
   const selectedCount = importPreviewSelection.size;
   wrap.innerHTML = `
     <h2>Import Preview</h2>
-    <p class="small muted">Load a CSV or Bitwarden JSON export, review conflicts, choose per-row actions, then import only the selected entries.</p>
+    <p class="small muted">Load a CSV or Bitwarden JSON export, review confidence matches, choose per-row actions, then import only the selected entries.</p>
     <div class="row">
       <div><label>Import file</label><input id="iv_file" type="file" accept=".csv,.json" /></div>
     </div>
@@ -531,9 +659,11 @@ function renderImportScreen() {
         const conflicts = findConflicts(entry);
         return {
           ...entry,
+          conflictMatches: conflicts,
           conflictIds: conflicts.map((item) => item.id),
           conflictCount: conflicts.length,
-          importAction: conflicts.length ? "merge" : "import",
+          validationIssues: validateEntry(entry),
+          importAction: conflicts.length ? (conflicts[0].score >= 8 ? "merge" : "review") : "import",
         };
       });
       importPreviewSelection = new Set(importPreview.map((_, index) => index));
@@ -554,7 +684,8 @@ function renderImportScreen() {
   wrap.querySelector("#iv_import").addEventListener("click", async () => {
     const selected = importPreview.filter((_, index) => importPreviewSelection.has(index));
     if (!selected.length) return toast("Select at least one entry.", true);
-    rememberUndo("import");
+    if (selected.some((item) => item.importAction === "review")) return toast("Resolve rows marked Review before importing.", true);
+    rememberUndo("import", `${selected.length} rows`);
     let importedCount = 0;
     let updatedCount = 0;
     for (const item of selected) {
@@ -577,7 +708,7 @@ function renderImportScreen() {
           createdAt: existing.createdAt,
           history: existing.history || [],
           passwordHistory: existing.passwordHistory || [],
-          updatedAt: new Date().toISOString()
+          updatedAt: new Date().toISOString(),
         });
         updatedCount++;
       } else if (item.importAction === "merge") {
@@ -589,6 +720,7 @@ function renderImportScreen() {
         if (!existing.password && normalized.password) existing.password = normalized.password;
         if (!existing.username && normalized.username) existing.username = normalized.username;
         if (!existing.url && normalized.url) existing.url = normalized.url;
+        existing.validationIssues = validateEntry(existing);
         existing.updatedAt = new Date().toISOString();
         updatedCount++;
       }
@@ -613,23 +745,29 @@ function renderImportPreviewHost(wrap) {
   if (!importPreview.length) return;
   const table = document.createElement("table");
   table.className = "table mobile-cards";
-  table.innerHTML = `<thead><tr><th></th><th>Title</th><th>Category</th><th>User</th><th>Preview</th><th>Action</th></tr></thead>`;
+  table.innerHTML = "<thead><tr><th></th><th>Title</th><th>Category</th><th>User</th><th>Matches</th><th>Validation</th><th>Action</th></tr></thead>";
   const tbody = document.createElement("tbody");
   importPreview.forEach((entry, index) => {
     const tr = document.createElement("tr");
+    const matches = entry.conflictMatches?.length
+      ? entry.conflictMatches.slice(0, 2).map((match) => `${match.title} (${match.score})`).join(", ")
+      : "None";
+    const validation = entry.validationIssues?.length ? entry.validationIssues.join(", ") : "OK";
     tr.innerHTML = `
-      <td data-label=""><input type="checkbox" style="width:auto;" ${importPreviewSelection.has(index) ? "checked" : ""} /></td>
+      <td data-label=""><input type="checkbox" style="width:auto;" ${importPreviewSelection.has(index) ? "checked" : ""} aria-label="Select import row" /></td>
       <td data-label="Title">${entry.title || "(Untitled)"}</td>
-      <td data-label="Category">${entry.category || "login"}${entry.conflictCount ? ` (${entry.conflictCount} conflict)` : ""}</td>
+      <td data-label="Category">${entry.category || "login"}</td>
       <td data-label="User">${entry.username || ""}</td>
-      <td data-label="Preview">${entry.rawPreview || entry.url || ""}</td>
+      <td data-label="Matches">${matches}</td>
+      <td data-label="Validation">${validation}</td>
       <td data-label="Action">
-        <select>
+        <select aria-label="Choose import action">
           <option value="import" ${entry.importAction === "import" ? "selected" : ""}>Import</option>
           <option value="duplicate" ${entry.importAction === "duplicate" ? "selected" : ""}>Duplicate</option>
           <option value="merge" ${entry.importAction === "merge" ? "selected" : ""}>Merge</option>
           <option value="replace" ${entry.importAction === "replace" ? "selected" : ""}>Replace</option>
           <option value="skip" ${entry.importAction === "skip" ? "selected" : ""}>Skip</option>
+          <option value="review" ${entry.importAction === "review" ? "selected" : ""}>Review</option>
         </select>
       </td>
     `;
@@ -676,6 +814,7 @@ function renderChangePasswordScreen() {
       const fileJson = await reencryptVaultToFile(state.vaultData, pw.value, state.vaultMeta, { kdf: getSecuritySettings().preferredKdf });
       const filename = buildTimestampedFilename(state.fileNameHint || "vault.json");
       downloadJson(fileJson, filename);
+      rememberSaveHistory(filename, "Master password changed");
       markSaved(filename);
       mode = "home";
       rerender();
@@ -699,6 +838,29 @@ function showModeScreen() {
   else rerender();
 }
 
+function registerPwaEvents() {
+  window.addEventListener("beforeinstallprompt", (event) => {
+    event.preventDefault();
+    state.pendingInstallPrompt = event;
+    state.pwaStatus = "Install available";
+    rerender();
+  });
+  window.addEventListener("appinstalled", () => {
+    state.pendingInstallPrompt = null;
+    state.pwaStatus = "Installed";
+    rerender();
+  });
+  window.addEventListener("zerovault-update-ready", () => {
+    state.updateReady = true;
+    state.pwaStatus = "Update ready";
+    rerender();
+  });
+  if (window.__zerovaultUpdateReady) {
+    state.updateReady = true;
+    state.pwaStatus = "Update ready";
+  }
+}
+
 lockBtn.addEventListener("click", () => lockNow("Vault locked."));
 
 ["mousemove", "keydown", "mousedown", "touchstart"].forEach((eventName) => {
@@ -709,9 +871,13 @@ lockBtn.addEventListener("click", () => lockNow("Vault locked."));
 
 document.addEventListener("visibilitychange", () => {
   if (!isUnlocked()) return;
-  if (document.hidden && getSecuritySettings().lockOnHide) lockNow("Vault locked because the tab was hidden.");
-  else if (document.hidden) clearSensitiveReveals();
-  else armInactivity();
+  if (document.hidden && getSecuritySettings().lockOnHide) {
+    lockNow("Vault locked because the tab was hidden.");
+  } else if (document.hidden) {
+    clearSensitiveReveals();
+  } else {
+    armInactivity();
+  }
 });
 
 window.addEventListener("beforeunload", (event) => {
@@ -738,6 +904,9 @@ document.addEventListener("keydown", (event) => {
   } else if (event.key === "Enter" && keyboardNavIndex >= 0) {
     event.preventDefault();
     handlers.onEditEntry(entries[keyboardNavIndex].id);
+  } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
+    event.preventDefault();
+    handlers.onUndoLastAction();
   }
 });
 
@@ -787,6 +956,7 @@ const handlers = {
     rerender();
   },
   onAddEntry: () => {
+    rememberUndo("add-entry");
     const entry = createNewEntry();
     state.vaultData.entries.unshift(entry);
     selectedEntryId = entry.id;
@@ -810,20 +980,21 @@ const handlers = {
     if (!entry) return;
     const values = getEditorFormValues();
     const next = { ...values, totpSecret: secretFromText(values.totpSecret || "") };
-    if (entry.isSensitive && !sensitiveRevealIds.has(id)) {
-      next.title = entry.title;
-      next.url = entry.url;
-      next.username = entry.username;
-      next.password = entry.password;
-      next.notes = entry.notes;
-      next.details = { ...(entry.details || {}) };
-      next.recoveryCodes = [...(entry.recoveryCodes || [])];
-      next.attachmentRefs = [...(entry.attachmentRefs || [])];
-      next.totpSecret = entry.totpSecret || "";
+    if (entry.isSensitive) {
+      for (const field of SENSITIVE_FIELDS) {
+        if (!isFieldRevealed(id, field)) {
+          if (field === "details") next.details = { ...(entry.details || {}) };
+          else if (field === "recoveryCodes") next.recoveryCodes = [...(entry.recoveryCodes || [])];
+          else if (field === "attachmentRefs") next.attachmentRefs = [...(entry.attachmentRefs || [])];
+          else next[field] = structuredClone(entry[field] || (Array.isArray(entry[field]) ? [] : ""));
+        }
+      }
     }
+    const validationIssues = validateEntry(next);
+    if (validationIssues.length) return toast(validationIssues[0], true);
     const hasChanges = JSON.stringify(cloneSnapshot(entry)) !== JSON.stringify(next);
     if (!hasChanges) return toast("No changes to save.");
-    rememberUndo("edit", new Set([id]));
+    rememberUndo("edit-entry", entry.title || id);
     entry.history = entry.history || [];
     entry.history.unshift({ savedAt: new Date().toISOString(), snapshot: cloneSnapshot(entry) });
     if (entry.history.length > 10) entry.history.length = 10;
@@ -833,7 +1004,7 @@ const handlers = {
       if (entry.passwordHistory.length > 10) entry.passwordHistory.length = 10;
       entry.lastPasswordChangeAt = new Date().toISOString();
     }
-    Object.assign(entry, next, { updatedAt: new Date().toISOString() });
+    Object.assign(entry, next, { updatedAt: new Date().toISOString(), validationIssues });
     await refreshTotpCache();
     updateVaultTimestamp();
     markDirty("edited");
@@ -844,10 +1015,10 @@ const handlers = {
     const entry = getEntryById(entryId);
     if (!entry?.history?.[historyIndex]) return;
     if (!confirm("Restore this saved version?")) return;
-    rememberUndo("restore-history", new Set([entryId]));
+    rememberUndo("restore-history", entry.title || entryId);
     const snapshot = entry.history[historyIndex].snapshot;
     entry.history.unshift({ savedAt: new Date().toISOString(), reason: "Rollback", snapshot: cloneSnapshot(entry) });
-    Object.assign(entry, snapshot, { updatedAt: new Date().toISOString() });
+    Object.assign(entry, snapshot, { updatedAt: new Date().toISOString(), validationIssues: validateEntry(snapshot) });
     await refreshTotpCache();
     updateVaultTimestamp();
     markDirty("edited");
@@ -856,7 +1027,7 @@ const handlers = {
   onToggleFavorite: (id) => {
     const entry = getEntryById(id);
     if (!entry) return;
-    rememberUndo("favorite", new Set([id]));
+    rememberUndo("favorite", entry.title || id);
     entry.isFavorite = !entry.isFavorite;
     entry.updatedAt = new Date().toISOString();
     updateVaultTimestamp();
@@ -866,7 +1037,7 @@ const handlers = {
   onArchiveEntry: (id) => {
     const entry = getEntryById(id);
     if (!entry) return;
-    rememberUndo("archive", new Set([id]));
+    rememberUndo("archive-entry", entry.title || id);
     entry.archived = true;
     entry.updatedAt = new Date().toISOString();
     bulkSelectedIds.delete(id);
@@ -878,23 +1049,15 @@ const handlers = {
   onRestoreEntry: (id) => {
     const entry = getEntryById(id);
     if (!entry) return;
-    rememberUndo("restore", new Set([id]));
+    rememberUndo("restore-entry", entry.title || id);
     entry.archived = false;
     entry.updatedAt = new Date().toISOString();
     updateVaultTimestamp();
     markDirty("edited");
     rerender();
   },
-  onInitiateDelete: (id) => {
-    deletingEntryIds.add(id);
-    rerender();
-  },
-  onCancelDelete: (id) => {
-    deletingEntryIds.delete(id);
-    rerender();
-  },
   onDeleteEntry: (id) => {
-    rememberUndo("delete", new Set([id]));
+    rememberUndo("delete-entry", getEntryById(id)?.title || id);
     state.vaultData.entries = state.vaultData.entries.filter((entry) => entry.id !== id);
     deletingEntryIds.delete(id);
     bulkSelectedIds.delete(id);
@@ -906,16 +1069,23 @@ const handlers = {
   onCopyPassword: async (id) => {
     const entry = getEntryById(id);
     if (!entry) return;
-    if (entry.isSensitive && !sensitiveRevealIds.has(id)) return toast("Reveal this sensitive entry first.", true);
-    await copyWithAutoClear(entry.password || "", "Password");
+    if (entry.isSensitive && !isFieldRevealed(id, "password")) return toast("Reveal the password field first.", true);
+    await copyWithAutoClear(entry.password || "", "Password", { isSensitive: !!entry.isSensitive });
+  },
+  onCopyField: async (id, field) => {
+    const entry = getEntryById(id);
+    if (!entry) return;
+    if (entry.isSensitive && !isFieldRevealed(id, field)) return toast("Reveal this field first.", true);
+    const labels = { username: "Username", url: "URL", notes: "Notes", totpSecret: "TOTP secret" };
+    await copyWithAutoClear(entry[field] || "", labels[field] || "Field", { isSensitive: !!entry.isSensitive });
   },
   onCopyTotp: async (id) => {
     const entry = getEntryById(id);
     if (!entry) return;
-    if (entry.isSensitive && !sensitiveRevealIds.has(id)) return toast("Reveal this sensitive entry first.", true);
+    if (entry.isSensitive && !isFieldRevealed(id, "totpSecret")) return toast("Reveal the TOTP field first.", true);
     const totp = await getEntryTotp(entry);
     if (!totp.valid || !totp.code) return toast(totp.label, true);
-    await copyWithAutoClear(totp.code, "TOTP code");
+    await copyWithAutoClear(totp.code, "TOTP code", { isSensitive: !!entry.isSensitive });
   },
   onGeneratePassword: (id) => {
     const entry = getEntryById(id);
@@ -937,14 +1107,19 @@ const handlers = {
     renderEditor(selectedEntryId ? getEntryById(selectedEntryId) : null, handlers);
   },
   onSensitiveCheckboxChange: () => {},
-  onToggleSensitiveReveal: (id) => {
-    if (sensitiveRevealIds.has(id)) {
-      sensitiveRevealIds.delete(id);
-      if (sensitiveRevealTimers.has(id)) clearTimeout(sensitiveRevealTimers.get(id));
-      sensitiveRevealTimers.delete(id);
+  onToggleSensitiveReveal: (id, field = "*") => {
+    const entry = getEntryById(id);
+    if (!entry?.isSensitive) return;
+    if (field === "*") {
+      const already = isEntryFullyRevealed(id);
+      for (const item of SENSITIVE_FIELDS) {
+        if (already) clearSensitiveRevealField(id, item);
+        else revealSensitiveField(id, item);
+      }
+    } else if (isFieldRevealed(id, field)) {
+      clearSensitiveRevealField(id, field);
     } else {
-      sensitiveRevealIds.add(id);
-      armSensitiveReveal(id);
+      revealSensitiveField(id, field);
     }
     if (selectedEntryId === id) renderEditor(getEntryById(id), handlers);
     rerender();
@@ -955,19 +1130,51 @@ const handlers = {
     if (summary && !confirm(`Download updated vault?\n\nChanges: ${summary}`)) return;
     const master = prompt("Enter master password to re-encrypt and download:");
     if (!master) return;
+    const snapshotName = prompt("Optional snapshot name before download:", "");
     const backupAlso = confirm("Also download a timestamped backup copy?");
     try {
+      if (snapshotName) createSnapshotRecord(snapshotName, "pre-download");
       updateVaultTimestamp();
       const fileJson = await reencryptVaultToFile(state.vaultData, master, state.vaultMeta, { kdf: getSecuritySettings().preferredKdf });
       const primaryName = state.fileNameHint || "vault.json";
       downloadJson(fileJson, primaryName);
       if (backupAlso) downloadJson(fileJson, buildTimestampedFilename(primaryName));
+      rememberSaveHistory(primaryName, snapshotName || "");
       state.upgradeAvailable = false;
       markSaved(primaryName);
       rerender();
       toast(backupAlso ? "Downloaded vault and timestamped backup." : "Downloaded updated vault.");
     } catch (error) {
       toast(error.message || "Failed to encrypt vault.", true);
+    }
+  },
+  onCreateSnapshot: () => {
+    const name = prompt("Snapshot name:", `Snapshot ${new Date().toLocaleString()}`);
+    if (!name) return;
+    createSnapshotRecord(name, "manual");
+    markDirty("edited");
+    rerender();
+    toast("Restore point created.");
+  },
+  onRestoreSnapshot: async (snapshotId) => {
+    const snapshot = (state.vaultData?.snapshots || []).find((item) => item.id === snapshotId);
+    if (!snapshot) return;
+    if (!confirm(`Restore snapshot "${snapshot.name}"?`)) return;
+    rememberUndo("restore-snapshot", snapshot.name);
+    state.vaultData = structuredClone(snapshot.vaultData);
+    await refreshTotpCache();
+    updateVaultTimestamp();
+    markDirty("edited");
+    rerender();
+    toast(`Restored snapshot "${snapshot.name}".`);
+  },
+  onUndoLastAction: async () => {
+    const snapshot = popHistorySnapshot();
+    if (!snapshot) return toast("No undo snapshot available.", true);
+    if (restoreUndoSnapshot(snapshot)) {
+      await refreshTotpCache();
+      markDirty("edited");
+      toast(`Undid ${snapshot.action}.`);
     }
   },
   onToggleFavoriteFilter: () => { visibleFilter.favoritesOnly = !visibleFilter.favoritesOnly; rerender(); },
@@ -977,11 +1184,6 @@ const handlers = {
   onToggleExpiringFilter: () => { visibleFilter.expiringOnly = !visibleFilter.expiringOnly; rerender(); },
   onApplySearch: () => { visibleFilter = { ...visibleFilter, ...getSearchValues() }; currentPage = 1; rerender(); },
   onClearSearch: () => { visibleFilter = defaultFilterState(); currentPage = 1; rerender(); },
-  onGoToPage: (page) => {
-    const { totalPages } = getPaginationSummary();
-    currentPage = Math.min(Math.max(1, page), totalPages);
-    rerender();
-  },
   onNextPage: () => {
     const { totalPages } = getPaginationSummary();
     currentPage = Math.min(currentPage + 1, totalPages);
@@ -1001,17 +1203,17 @@ const handlers = {
     rerender();
   },
   onBulkFavorite: () => {
-    rememberUndo("bulk-favorite", new Set(bulkSelectedIds));
+    rememberUndo("bulk-favorite", `${bulkSelectedIds.size} entries`);
     for (const id of bulkSelectedIds) {
       const entry = getEntryById(id);
       if (entry) entry.isFavorite = true;
     }
     updateVaultTimestamp();
-    markDirty("edited");
+    markDirty("edited", bulkSelectedIds.size);
     rerender();
   },
   onBulkArchive: () => {
-    rememberUndo("bulk-archive", new Set(bulkSelectedIds));
+    rememberUndo("bulk-archive", `${bulkSelectedIds.size} entries`);
     for (const id of bulkSelectedIds) {
       const entry = getEntryById(id);
       if (entry) entry.archived = true;
@@ -1024,10 +1226,13 @@ const handlers = {
   onBulkSetCategory: () => {
     const category = prompt("Set category for selected entries (login, card, note, identity, bank, license):", "login");
     if (!category) return;
-    rememberUndo("bulk-category", new Set(bulkSelectedIds));
+    rememberUndo("bulk-category", `${bulkSelectedIds.size} entries`);
     for (const id of bulkSelectedIds) {
       const entry = getEntryById(id);
-      if (entry) entry.category = category;
+      if (entry) {
+        entry.category = category;
+        entry.validationIssues = validateEntry(entry);
+      }
     }
     updateVaultTimestamp();
     markDirty("edited", bulkSelectedIds.size);
@@ -1036,7 +1241,7 @@ const handlers = {
   onBulkAddTag: () => {
     const tag = prompt("Add tag to selected entries:");
     if (!tag) return;
-    rememberUndo("bulk-tag", new Set(bulkSelectedIds));
+    rememberUndo("bulk-tag", `${bulkSelectedIds.size} entries`);
     for (const id of bulkSelectedIds) {
       const entry = getEntryById(id);
       if (entry && !(entry.tags || []).includes(tag)) entry.tags.push(tag);
@@ -1047,30 +1252,43 @@ const handlers = {
   },
   onBulkDelete: () => {
     if (!confirm(`Delete ${bulkSelectedIds.size} selected entries permanently?`)) return;
-    rememberUndo("bulk-delete", new Set(bulkSelectedIds));
+    rememberUndo("bulk-delete", `${bulkSelectedIds.size} entries`);
     state.vaultData.entries = state.vaultData.entries.filter((entry) => !bulkSelectedIds.has(entry.id));
     updateVaultTimestamp();
     markDirty("deleted", bulkSelectedIds.size);
     bulkSelectedIds.clear();
     rerender();
   },
-  onUndoLastBulkAction: () => {
-    const snapshot = state.lastUndoSnapshot;
-    if (!snapshot?.entries?.length) return toast("No undo snapshot available.", true);
-    const ids = new Set(snapshot.entries.map((entry) => entry.id));
-    state.vaultData.entries = [
-      ...state.vaultData.entries.filter((entry) => !ids.has(entry.id)),
-      ...snapshot.entries.map((entry) => structuredClone(entry)),
-    ];
-    clearUndoSnapshot();
-    updateVaultTimestamp();
-    markDirty("edited");
-    rerender();
-    toast("Restored the previous state.");
-  },
   onToggleAuditPanel: () => {
     auditPanelOpen = !auditPanelOpen;
     rerender();
+  },
+  onExportAudit: () => {
+    const audit = getAudit();
+    downloadJson(buildAuditExport(state.vaultData.vaultName, audit), "zerovault-audit-report.json");
+    toast("Audit report downloaded.");
+  },
+  onExportSummary: () => {
+    const audit = getAudit();
+    downloadJson(buildVaultSummaryExport(state.vaultData, audit), "zerovault-summary.json");
+    toast("Vault summary downloaded.");
+  },
+  onPrintRecoverySheet: () => {
+    openPrintableHtml(buildRecoverySheetHtml(state.vaultData));
+  },
+  onInstallApp: async () => {
+    if (!state.pendingInstallPrompt) return toast("Install prompt is not available on this browser.", true);
+    await state.pendingInstallPrompt.prompt();
+    state.pendingInstallPrompt = null;
+    state.pwaStatus = "Install prompt used";
+    rerender();
+  },
+  onRefreshForUpdate: async () => {
+    if ("serviceWorker" in navigator) {
+      const registration = await navigator.serviceWorker.getRegistration();
+      registration?.waiting?.postMessage({ type: "SKIP_WAITING" });
+      window.location.reload();
+    }
   },
   getVisibleEntries,
   getPaginationSummary,
@@ -1081,18 +1299,22 @@ const handlers = {
   isAuditPanelOpen: () => auditPanelOpen,
   getEntryAudit,
   getEntryTotp: (id) => totpCache.get(id) || { valid: false, label: getEntryById(id)?.totpSecret ? "Calculating TOTP..." : "No TOTP secret set", code: "", expiresIn: 0 },
-  getCryptoSummary: () => ({ current: `${state.vaultMeta?.crypto?.kdf || "PBKDF2"} / ${state.vaultMeta?.crypto?.cipher || "AES-GCM"}`, preferred: getSecuritySettings().preferredKdf, upgradeAvailable: state.upgradeAvailable, argon2Available: getArgon2Support().available }),
-  getFileSummary: () => ({ name: state.fileNameHint || "vault.json", lastSaved: state.lastSavedAt ? new Date(state.lastSavedAt).toLocaleString() : "Not downloaded in this session" }),
-  getBulkSummary: () => ({ selected: bulkSelectedIds.size, undoAvailable: !!state.lastUndoSnapshot }),
+  getCryptoSummary: () => ({ current: `${state.vaultMeta?.crypto?.kdf || "PBKDF2"} / ${state.vaultMeta?.crypto?.cipher || "AES-GCM"}`, preferred: getSecuritySettings().preferredKdf, upgradeAvailable: state.upgradeAvailable, argon2Available: getArgon2Support().available, argon2Reason: getArgon2Support().reason || "Runtime loaded" }),
+  getFileSummary: () => ({ name: state.fileNameHint || "vault.json", lastSaved: state.lastSavedAt ? new Date(state.lastSavedAt).toLocaleString() : "Not downloaded in this session", saveHistory: state.vaultData?.saveHistory || [], snapshots: state.vaultData?.snapshots || [] }),
+  getBulkSummary: () => ({ selected: bulkSelectedIds.size, undoAvailable: state.historyStack.length > 0, undoCount: state.historyStack.length }),
   isEntrySelected: (id) => id === selectedEntryId,
   isEntryDeleting: (id) => deletingEntryIds.has(id),
   isBulkSelected: (id) => bulkSelectedIds.has(id),
   getGeneratorSettings: () => ({ ...generatorSettings }),
-  isSensitiveRevealed: (id) => sensitiveRevealIds.has(id),
+  isSensitiveRevealed: (id, field = "*") => field === "*" ? isEntryFullyRevealed(id) : isFieldRevealed(id, field),
+  getSensitiveSettings: () => ({ revealSeconds: Math.round((getSecuritySettings().sensitiveRevealMs || 30000) / 1000), allowCopy: !!getSecuritySettings().allowSensitiveCopy }),
+  getPwaStatus: () => ({ status: state.pwaStatus, installAvailable: !!state.pendingInstallPrompt, updateReady: !!state.updateReady }),
 };
 
 function init() {
   try {
+    clearHistorySnapshots();
+    registerPwaEvents();
     render(appRoot, handlers);
     updateLockButton();
   } catch (error) {

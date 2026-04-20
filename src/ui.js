@@ -31,65 +31,47 @@ function categories() {
 function detailFieldSpecs(category) {
   switch (category) {
     case "card":
-      return [
-        ["cardholderName", "Cardholder Name"],
-        ["cardNumber", "Card Number"],
-        ["expiry", "Expiry"],
-        ["cvv", "CVV"],
-      ];
+      return [["cardholderName", "Cardholder Name"], ["cardNumber", "Card Number"], ["expiry", "Expiry"], ["cvv", "CVV"]];
     case "identity":
-      return [
-        ["fullName", "Full Name"],
-        ["documentId", "Document ID"],
-        ["issuingCountry", "Issuing Country"],
-      ];
+      return [["fullName", "Full Name"], ["documentId", "Document ID"], ["issuingCountry", "Issuing Country"]];
     case "bank":
-      return [
-        ["bankName", "Bank Name"],
-        ["accountNumber", "Account Number"],
-        ["routingNumber", "Routing / SWIFT"],
-      ];
+      return [["bankName", "Bank Name"], ["accountNumber", "Account Number"], ["routingNumber", "Routing / SWIFT"]];
     case "license":
-      return [
-        ["product", "Product"],
-        ["licenseKey", "License Key"],
-        ["seatCount", "Seat Count"],
-      ];
+      return [["product", "Product"], ["licenseKey", "License Key"], ["seatCount", "Seat Count"]];
     case "note":
-      return [
-        ["topic", "Topic"],
-        ["owner", "Owner"],
-      ];
+      return [["topic", "Topic"], ["owner", "Owner"]];
     default:
-      return [
-        ["website", "Website"],
-        ["loginHint", "Login Hint"],
-      ];
+      return [["website", "Website"], ["loginHint", "Login Hint"]];
   }
 }
 
 function masked(text) {
-  if (!text) return "";
-  return "Hidden";
+  return text ? "Hidden" : "";
 }
 
-export function render(appRoot, handlers) {
-  appRoot.innerHTML = "";
-  appRoot.appendChild(isUnlocked() ? renderUnlocked(handlers) : renderLocked(handlers));
-}
-
-function renderLocked(handlers) {
-  return el("div", { style: "max-width: 520px; margin: 40px auto; text-align: center;" }, [
-    el("div", { style: "font-size: 3rem; margin-bottom: 18px;" }, [el("span", { text: "🔐" })]),
-    el("div", { class: "card" }, [
-      el("h2", { text: "Welcome to ZeroVault" }),
-      el("p", { class: "notice", text: "Offline vault with local encryption, audit tools, TOTP, import preview, bulk actions, and sensitive-entry mode." }),
-      el("div", { class: "actions centered" }, [
-        el("button", { text: "Create New Vault", onclick: handlers.onGoCreate, style: "width: 100%" }),
-        el("button", { class: "secondary", text: "Open Existing Vault", onclick: handlers.onGoOpen, style: "width: 100%" }),
-      ]),
-    ]),
+function checkbox(label, checked, handler) {
+  return el("label", { class: "inline", style: "cursor:pointer; gap:8px;" }, [
+    el("input", { type: "checkbox", checked, onchange: handler, style: "width:auto;" }),
+    el("span", { text: label }),
   ]);
+}
+
+function stat(label, value) {
+  return el("div", { class: "stat-card" }, [
+    el("div", { class: "stat-value", text: value }),
+    el("div", { class: "small muted", text: label }),
+  ]);
+}
+
+function fieldActionButtons(entry, field, handlers) {
+  if (state.readOnly || !entry.isSensitive) return null;
+  const revealed = handlers.isSensitiveRevealed(entry.id, field);
+  return el("div", { class: "inline wrap field-actions" }, [
+    el("button", { class: "secondary small", text: revealed ? "Hide" : "Reveal", onclick: () => handlers.onToggleSensitiveReveal(entry.id, field), "aria-label": `${revealed ? "Hide" : "Reveal"} ${field}` }),
+    ["username", "url", "notes", "password"].includes(field)
+      ? el("button", { class: "secondary small", text: "Copy", onclick: field === "password" ? () => handlers.onCopyPassword(entry.id) : () => handlers.onCopyField(entry.id, field), "aria-label": `Copy ${field}` })
+      : null,
+  ].filter(Boolean));
 }
 
 function renderSummaryCard(handlers) {
@@ -97,16 +79,6 @@ function renderSummaryCard(handlers) {
   const cryptoInfo = handlers.getCryptoSummary();
   const fileInfo = handlers.getFileSummary();
   const bulkInfo = handlers.getBulkSummary();
-  const actions = [
-    !state.readOnly ? el("button", { text: "Add Entry", onclick: handlers.onAddEntry }) : null,
-    !state.readOnly ? el("button", { class: "secondary", text: "Import", onclick: handlers.onGoImport }) : null,
-    !state.readOnly ? el("button", { class: "secondary", text: "Security", onclick: handlers.onGoSecurity }) : null,
-    !state.readOnly ? el("button", { class: "secondary", text: "Save & Download", onclick: handlers.onSaveDownload }) : null,
-    !state.readOnly ? el("button", { class: "secondary", text: "Change Master Password", onclick: handlers.onGoChangePassword }) : null,
-    !state.readOnly ? el("button", { class: "secondary", text: "Mobile Transfer (QR)", onclick: handlers.onGoQR }) : null,
-    !state.readOnly ? el("button", { class: "secondary", text: "Switch to Read-Only", onclick: handlers.onSwitchReadOnly }) : null,
-  ].filter(Boolean);
-
   return el("div", { class: "card" }, [
     el("div", { class: "stack-sm" }, [
       el("div", { class: "inline wrap" }, [
@@ -114,29 +86,40 @@ function renderSummaryCard(handlers) {
         el("span", { class: `badge ${state.hasUnsavedChanges ? "badge-warn" : "badge-ok"}`, text: state.hasUnsavedChanges ? "Unsaved changes" : "Saved state clean" }),
         el("span", { class: "badge", text: `${state.vaultData.entries.length} entries` }),
         bulkInfo.selected > 0 ? el("span", { class: "badge badge-warn", text: `${bulkInfo.selected} selected` }) : null,
+        bulkInfo.undoCount ? el("span", { class: "badge", text: `${bulkInfo.undoCount} undo states` }) : null,
       ].filter(Boolean)),
       el("div", { class: "small muted", text: `File: ${fileInfo.name}` }),
       el("div", { class: "small muted", text: `Last download: ${fileInfo.lastSaved}` }),
       el("div", { class: "small muted", text: `Crypto: ${cryptoInfo.current}` }),
+      el("div", { class: "small muted", text: `Argon2id: ${cryptoInfo.argon2Available ? "Runtime loaded" : cryptoInfo.argon2Reason}` }),
       el("div", { class: "small muted", text: `Audit: ${audit.weak} weak, ${audit.reused} reused, ${audit.expiring} expiring, ${audit.noTotp} missing TOTP` }),
     ]),
-    el("div", { class: "actions wrap" }, actions),
+    el("div", { class: "actions wrap" }, [
+      !state.readOnly ? el("button", { text: "Add Entry", onclick: handlers.onAddEntry }) : null,
+      !state.readOnly ? el("button", { class: "secondary", text: "Import", onclick: handlers.onGoImport }) : null,
+      !state.readOnly ? el("button", { class: "secondary", text: "Security", onclick: handlers.onGoSecurity }) : null,
+      !state.readOnly ? el("button", { class: "secondary", text: "Save & Download", onclick: handlers.onSaveDownload }) : null,
+      !state.readOnly ? el("button", { class: "secondary", text: "Snapshot", onclick: handlers.onCreateSnapshot }) : null,
+      !state.readOnly ? el("button", { class: "secondary", text: "Change Master Password", onclick: handlers.onGoChangePassword }) : null,
+      !state.readOnly ? el("button", { class: "secondary", text: "Mobile Transfer (QR)", onclick: handlers.onGoQR }) : null,
+      !state.readOnly ? el("button", { class: "secondary", text: "Switch to Read-Only", onclick: handlers.onSwitchReadOnly }) : null,
+    ].filter(Boolean)),
   ]);
 }
 
 function renderBulkBar(handlers) {
   const bulk = handlers.getBulkSummary();
-  if (!bulk.selected || state.readOnly) return null;
+  if ((!bulk.selected && !bulk.undoAvailable) || state.readOnly) return null;
   return el("div", { class: "card bulk-bar" }, [
     el("div", { class: "inline wrap" }, [
-      el("strong", { text: `${bulk.selected} selected` }),
-      el("button", { class: "secondary small", text: "Favorite", onclick: handlers.onBulkFavorite }),
-      el("button", { class: "secondary small", text: "Archive", onclick: handlers.onBulkArchive }),
-      el("button", { class: "secondary small", text: "Set Category", onclick: handlers.onBulkSetCategory }),
-      el("button", { class: "secondary small", text: "Add Tag", onclick: handlers.onBulkAddTag }),
-      el("button", { class: "danger small", text: "Delete", onclick: handlers.onBulkDelete }),
-      bulk.undoAvailable ? el("button", { class: "secondary small", text: "Undo", onclick: handlers.onUndoLastBulkAction }) : null,
-      el("button", { class: "secondary small", text: "Clear", onclick: handlers.onClearBulkSelection }),
+      bulk.selected ? el("strong", { text: `${bulk.selected} selected` }) : el("strong", { text: "History available" }),
+      bulk.selected ? el("button", { class: "secondary small", text: "Favorite", onclick: handlers.onBulkFavorite }) : null,
+      bulk.selected ? el("button", { class: "secondary small", text: "Archive", onclick: handlers.onBulkArchive }) : null,
+      bulk.selected ? el("button", { class: "secondary small", text: "Set Category", onclick: handlers.onBulkSetCategory }) : null,
+      bulk.selected ? el("button", { class: "secondary small", text: "Add Tag", onclick: handlers.onBulkAddTag }) : null,
+      bulk.selected ? el("button", { class: "danger small", text: "Delete", onclick: handlers.onBulkDelete }) : null,
+      bulk.undoAvailable ? el("button", { class: "secondary small", text: "Undo Last Action", onclick: handlers.onUndoLastAction }) : null,
+      bulk.selected ? el("button", { class: "secondary small", text: "Clear", onclick: handlers.onClearBulkSelection }) : null,
     ].filter(Boolean)),
   ]);
 }
@@ -146,30 +129,18 @@ function renderSearchCard(handlers) {
   return el("div", { class: "card" }, [
     el("h3", { text: "Search & Filter" }),
     el("div", { class: "row" }, [
-      el("div", {}, [
-        el("label", { text: "Query" }),
-        el("input", { id: "searchQuery", type: "text", value: filter.q, placeholder: "title / url / username / tag" }),
-      ]),
-      el("div", {}, [
-        el("label", { text: "Tag" }),
-        el("input", { id: "searchTag", type: "text", value: filter.tag, placeholder: "e.g. work" }),
-      ]),
-      el("div", {}, [
-        el("label", { text: "Category" }),
-        el("select", { id: "searchCategory", value: filter.category || "" }, [
-          el("option", { value: "", text: "All categories" }),
-          ...categories().map(([value, label]) => el("option", { value, text: label, selected: filter.category === value })),
-        ]),
-      ]),
-      el("div", {}, [
-        el("label", { text: "Sort" }),
-        el("select", { id: "searchSort", value: filter.sort || "recent" }, [
-          el("option", { value: "recent", text: "Most Recent", selected: filter.sort === "recent" }),
-          el("option", { value: "title", text: "Title A-Z", selected: filter.sort === "title" }),
-          el("option", { value: "weak", text: "Weak First", selected: filter.sort === "weak" }),
-          el("option", { value: "favorites", text: "Favorites First", selected: filter.sort === "favorites" }),
-        ]),
-      ]),
+      el("div", {}, [el("label", { for: "searchQuery", text: "Query" }), el("input", { id: "searchQuery", type: "text", value: filter.q, placeholder: "title / url / username / tag" })]),
+      el("div", {}, [el("label", { for: "searchTag", text: "Tag" }), el("input", { id: "searchTag", type: "text", value: filter.tag, placeholder: "e.g. work" })]),
+      el("div", {}, [el("label", { for: "searchCategory", text: "Category" }), el("select", { id: "searchCategory", value: filter.category || "" }, [
+        el("option", { value: "", text: "All categories" }),
+        ...categories().map(([value, label]) => el("option", { value, text: label, selected: filter.category === value })),
+      ])]),
+      el("div", {}, [el("label", { for: "searchSort", text: "Sort" }), el("select", { id: "searchSort", value: filter.sort || "recent" }, [
+        el("option", { value: "recent", text: "Most Recent", selected: filter.sort === "recent" }),
+        el("option", { value: "title", text: "Title A-Z", selected: filter.sort === "title" }),
+        el("option", { value: "weak", text: "Weak First", selected: filter.sort === "weak" }),
+        el("option", { value: "favorites", text: "Favorites First", selected: filter.sort === "favorites" }),
+      ])]),
     ]),
     el("div", { class: "inline wrap filter-checks" }, [
       checkbox("Favorites only", filter.favoritesOnly, handlers.onToggleFavoriteFilter),
@@ -190,41 +161,96 @@ function renderAuditCard(handlers) {
   if (!handlers.isAuditPanelOpen()) return null;
   const report = handlers.getAuditReport();
   return el("div", { class: "card" }, [
-    el("h3", { text: "Audit Report" }),
-    el("div", { class: "stack-sm" }, report.items.slice(0, 12).map((item) =>
+    el("div", { class: "section-heading" }, [
+      el("h3", { text: "Audit Report" }),
+      el("div", { class: "actions" }, [
+        el("button", { class: "secondary small", text: "Download JSON", onclick: handlers.onExportAudit }),
+        el("button", { class: "secondary small", text: "Close", onclick: handlers.onToggleAuditPanel }),
+      ]),
+    ]),
+    el("div", { class: "stack-sm" }, report.items.slice(0, 20).map((item) =>
       el("div", { class: "history-row inline wrap" }, [
         el("span", { class: "title-text", text: item.title }),
         el("span", { class: `badge ${item.score > 2 ? "badge-danger" : item.score > 0 ? "badge-warn" : "badge-ok"}`, text: item.score > 0 ? item.issues.join(", ") : "Healthy" }),
       ])
     )),
-    el("div", { class: "actions" }, [
-      el("button", { class: "secondary", text: "Close", onclick: handlers.onToggleAuditPanel }),
+  ]);
+}
+
+function renderVersionCard(handlers) {
+  const fileInfo = handlers.getFileSummary();
+  const snapshots = fileInfo.snapshots.slice(0, 6);
+  const saves = fileInfo.saveHistory.slice(0, 6);
+  return el("div", { class: "card" }, [
+    el("h3", { text: "Save & Restore" }),
+    el("div", { class: "stack-sm" }, [
+      el("div", { class: "small muted", text: "Named snapshots create in-vault restore points. Save history tracks downloads." }),
+      el("div", { class: "small muted", text: `Snapshots: ${fileInfo.snapshots.length} | Downloads: ${fileInfo.saveHistory.length}` }),
+    ]),
+    el("div", { class: "split-grid" }, [
+      el("div", {}, [
+        el("strong", { text: "Restore Points" }),
+        el("div", { class: "stack-sm top-gap" }, snapshots.length
+          ? snapshots.map((item) => el("div", { class: "history-row inline wrap" }, [
+            el("span", { class: "small", text: `${item.name} • ${new Date(item.createdAt).toLocaleString()}` }),
+            !state.readOnly ? el("button", { class: "secondary small", text: "Restore", onclick: () => handlers.onRestoreSnapshot(item.id) }) : null,
+          ]))
+          : [el("div", { class: "small muted", text: "No snapshots yet." })]),
+      ]),
+      el("div", {}, [
+        el("strong", { text: "Download History" }),
+        el("div", { class: "stack-sm top-gap" }, saves.length
+          ? saves.map((item) => el("div", { class: "history-row inline wrap" }, [
+            el("span", { class: "small", text: `${item.fileName} • ${new Date(item.savedAt).toLocaleString()}` }),
+            item.snapshotName ? el("span", { class: "badge", text: item.snapshotName }) : null,
+          ]))
+          : [el("div", { class: "small muted", text: "No downloads recorded in this vault." })]),
+      ]),
     ]),
   ]);
 }
 
-function checkbox(label, checked, handler) {
-  return el("label", { class: "inline", style: "cursor:pointer; gap:8px;" }, [
-    el("input", { type: "checkbox", checked, onchange: handler, style: "width:auto;" }),
-    el("span", { text: label }),
+function renderExportCard(handlers) {
+  return el("div", { class: "card" }, [
+    el("h3", { text: "Export Tools" }),
+    el("div", { class: "small muted", text: "Generate operational reports without exposing the encrypted vault file itself." }),
+    el("div", { class: "actions wrap" }, [
+      el("button", { class: "secondary", text: "Audit Report JSON", onclick: handlers.onExportAudit }),
+      el("button", { class: "secondary", text: "Vault Summary JSON", onclick: handlers.onExportSummary }),
+      el("button", { class: "secondary", text: "Printable Recovery Sheet", onclick: handlers.onPrintRecoverySheet }),
+    ]),
+  ]);
+}
+
+function renderPwaCard(handlers) {
+  const pwa = handlers.getPwaStatus();
+  return el("div", { class: "card" }, [
+    el("h3", { text: "Offline App" }),
+    el("div", { class: "stack-sm" }, [
+      el("span", { class: "badge", text: pwa.status }),
+      el("div", { class: "small muted", text: "Install support depends on the browser. Updates are surfaced when a new service worker is ready." }),
+    ]),
+    el("div", { class: "actions wrap" }, [
+      pwa.installAvailable ? el("button", { class: "secondary", text: "Install App", onclick: handlers.onInstallApp }) : null,
+      pwa.updateReady ? el("button", { class: "secondary", text: "Refresh for Update", onclick: handlers.onRefreshForUpdate }) : null,
+      el("a", { class: "button-link", href: "./tests/index.html", target: "_blank", rel: "noopener noreferrer" }, [document.createTextNode("Open Test Runner")]),
+    ].filter(Boolean)),
   ]);
 }
 
 function renderEntriesTable(handlers) {
   const entries = handlers.getVisibleEntries();
   const pagination = handlers.getPaginationSummary();
-  const table = el("table", { class: "table mobile-cards" });
-  const thead = el("thead", {}, [
-    el("tr", {}, [
-      el("th", { text: "" }),
-      el("th", { text: "" }),
-      el("th", { text: "Identity" }),
-      el("th", { text: "Category" }),
-      el("th", { text: "Health" }),
-      el("th", { text: "Updated" }),
-      el("th", { text: "Actions" }),
-    ]),
-  ]);
+  const table = el("table", { class: "table mobile-cards", "aria-label": "Vault entries table" });
+  const thead = el("thead", {}, [el("tr", {}, [
+    el("th", { text: "" }),
+    el("th", { text: "" }),
+    el("th", { text: "Identity" }),
+    el("th", { text: "Category" }),
+    el("th", { text: "Health" }),
+    el("th", { text: "Updated" }),
+    el("th", { text: "Actions" }),
+  ])]);
   const tbody = el("tbody");
 
   for (const entry of entries) {
@@ -233,48 +259,40 @@ function renderEntriesTable(handlers) {
     const audit = handlers.getEntryAudit(entry.id);
     const selected = handlers.isEntrySelected(entry.id);
     const sensitive = !!entry.isSensitive;
-    const title = sensitive ? masked(entry.title || "(Sensitive)") : (entry.title || "(No title)");
-    const meta = sensitive ? masked(entry.username || entry.url || "") : (entry.username || entry.url || "");
+    const title = sensitive && !handlers.isSensitiveRevealed(entry.id, "title") ? masked(entry.title || "(Sensitive)") : (entry.title || "(No title)");
+    const metaSource = entry.username || entry.url || "";
+    const meta = sensitive && !handlers.isSensitiveRevealed(entry.id, "username") && !handlers.isSensitiveRevealed(entry.id, "url") ? masked(metaSource) : metaSource;
     tbody.appendChild(el("tr", { class: `${selected ? "selected" : ""} ${entry.archived ? "archived" : ""}`.trim() }, [
-      el("td", {}, [
-        !state.readOnly ? el("input", { type: "checkbox", checked: handlers.isBulkSelected(entry.id), onchange: () => handlers.onToggleBulkEntry(entry.id), style: "width:auto;" }) : null,
-      ]),
-      el("td", {}, [
-        el("span", {
-          text: entry.isFavorite ? "★" : "☆",
-          style: `cursor:pointer; font-size: 1.2rem; color: ${entry.isFavorite ? "#ffc107" : "#9aa3b2"}`,
-          onclick: () => handlers.onToggleFavorite(entry.id),
-        }),
-      ]),
-      el("td", { "data-label": "Identity" }, [
-        el("div", { class: "title-cell" }, [
-          el("div", { class: `entry-icon ${sensitive ? "sensitive-glow" : ""}`, style: `background-color: ${color}`, text: initials }),
-          el("div", { class: "stack-sm" }, [
-            el("span", { class: "title-text", text: title }),
-            el("span", { class: "meta-text", text: meta }),
-          ]),
+      el("td", {}, [!state.readOnly ? el("input", { type: "checkbox", checked: handlers.isBulkSelected(entry.id), onchange: () => handlers.onToggleBulkEntry(entry.id), style: "width:auto;", "aria-label": `Select ${entry.title || "entry"}` }) : null]),
+      el("td", {}, [el("span", {
+        text: entry.isFavorite ? "★" : "☆",
+        style: `cursor:pointer; font-size: 1.2rem; color: ${entry.isFavorite ? "#ffc107" : "#9aa3b2"}`,
+        onclick: () => handlers.onToggleFavorite(entry.id),
+        role: "button",
+        tabindex: "0",
+        "aria-label": `${entry.isFavorite ? "Remove from favorites" : "Add to favorites"}`
+      })]),
+      el("td", { "data-label": "Identity" }, [el("div", { class: "title-cell" }, [
+        el("div", { class: `entry-icon ${sensitive ? "sensitive-glow" : ""}`, style: `background-color: ${color}`, text: initials }),
+        el("div", { class: "stack-sm" }, [
+          el("span", { class: "title-text", text: title }),
+          el("span", { class: "meta-text", text: meta }),
         ]),
-      ]),
-      el("td", { "data-label": "Category" }, [
-        el("div", { class: "inline wrap" }, [
-          el("span", { class: "badge", text: entry.category || "login" }),
-          sensitive ? el("span", { class: "badge badge-danger", text: "Sensitive" }) : null,
-        ].filter(Boolean)),
-      ]),
-      el("td", { "data-label": "Health" }, [
-        el("span", { class: `badge ${audit.score > 2 ? "badge-danger" : audit.score > 0 ? "badge-warn" : "badge-ok"}`, text: audit.score > 0 ? `${audit.score} issues` : "Healthy" }),
-      ]),
+      ])]),
+      el("td", { "data-label": "Category" }, [el("div", { class: "inline wrap" }, [
+        el("span", { class: "badge", text: entry.category || "login" }),
+        sensitive ? el("span", { class: "badge badge-danger", text: "Sensitive" }) : null,
+        entry.validationIssues?.length ? el("span", { class: "badge badge-warn", text: `${entry.validationIssues.length} validation` }) : null,
+      ].filter(Boolean))]),
+      el("td", { "data-label": "Health" }, [el("span", { class: `badge ${audit.score > 2 ? "badge-danger" : audit.score > 0 ? "badge-warn" : "badge-ok"}`, text: audit.score > 0 ? `${audit.score} issues` : "Healthy" })]),
       el("td", { class: "small", "data-label": "Updated", text: timeAgo(entry.updatedAt || entry.createdAt) }),
-      el("td", { "data-label": "Actions" }, [
-        el("div", { class: "inline wrap" }, [
-          el("button", { class: "secondary small", text: state.readOnly ? "View" : "Edit", onclick: () => handlers.onEditEntry(entry.id) }),
-          !state.readOnly ? el("button", { class: "secondary small", text: sensitive ? "Reveal" : "Copy", onclick: sensitive ? () => handlers.onToggleSensitiveReveal(entry.id) : () => handlers.onCopyPassword(entry.id) }) : null,
-          entry.totpSecret && !state.readOnly ? el("button", { class: "secondary small", text: "OTP", onclick: () => handlers.onCopyTotp(entry.id) }) : null,
-          entry.archived
-            ? !state.readOnly ? el("button", { class: "secondary small", text: "Restore", onclick: () => handlers.onRestoreEntry(entry.id) }) : null
-            : !state.readOnly ? el("button", { class: "danger small", text: "Archive", onclick: () => handlers.onArchiveEntry(entry.id) }) : null,
-        ].filter(Boolean)),
-      ]),
+      el("td", { "data-label": "Actions" }, [el("div", { class: "inline wrap" }, [
+        el("button", { class: "secondary small", text: state.readOnly ? "View" : "Edit", onclick: () => handlers.onEditEntry(entry.id), "aria-label": `${state.readOnly ? "View" : "Edit"} ${entry.title || "entry"}` }),
+        !state.readOnly && sensitive ? el("button", { class: "secondary small", text: handlers.isSensitiveRevealed(entry.id) ? "Hide All" : "Reveal All", onclick: () => handlers.onToggleSensitiveReveal(entry.id), "aria-label": "Toggle all sensitive fields" }) : null,
+        !state.readOnly && !sensitive ? el("button", { class: "secondary small", text: "Copy", onclick: () => handlers.onCopyPassword(entry.id), "aria-label": "Copy password" }) : null,
+        entry.totpSecret && !state.readOnly ? el("button", { class: "secondary small", text: "OTP", onclick: () => handlers.onCopyTotp(entry.id), "aria-label": "Copy TOTP code" }) : null,
+        entry.archived ? (!state.readOnly ? el("button", { class: "secondary small", text: "Restore", onclick: () => handlers.onRestoreEntry(entry.id) }) : null) : (!state.readOnly ? el("button", { class: "danger small", text: "Archive", onclick: () => handlers.onArchiveEntry(entry.id) }) : null),
+      ].filter(Boolean))]),
     ]));
   }
 
@@ -285,9 +303,9 @@ function renderEntriesTable(handlers) {
     el("div", { class: "pagination-bar inline wrap" }, [
       el("span", { class: "small muted", text: pagination.totalItems ? `Showing ${pagination.startItem}-${pagination.endItem} of ${pagination.totalItems}` : "No entries" }),
       el("div", { class: "inline wrap" }, [
-        el("button", { class: "secondary small", text: "Previous", onclick: handlers.onPrevPage, disabled: pagination.currentPage <= 1 }),
+        el("button", { class: "secondary small", text: "Previous", onclick: handlers.onPrevPage, disabled: pagination.currentPage <= 1, "aria-label": "Previous page" }),
         el("span", { class: "badge", text: `Page ${pagination.currentPage} / ${pagination.totalPages}` }),
-        el("button", { class: "secondary small", text: "Next", onclick: handlers.onNextPage, disabled: pagination.currentPage >= pagination.totalPages }),
+        el("button", { class: "secondary small", text: "Next", onclick: handlers.onNextPage, disabled: pagination.currentPage >= pagination.totalPages, "aria-label": "Next page" }),
       ]),
     ]),
   ]);
@@ -298,8 +316,7 @@ function renderUnlocked(handlers) {
     state.readOnly ? el("div", { class: "card notice" }, [document.createTextNode("Emergency Read-Only Mode is active. Editing and clipboard actions are disabled.")]) : null,
     renderSummaryCard(handlers),
     renderBulkBar(handlers),
-    el("div", { class: "dashboard-grid" }, [
-      renderSearchCard(handlers),
+    el("div", { class: "dashboard-grid" }, [renderSearchCard(handlers), el("div", { class: "stack-md" }, [
       el("div", { class: "card" }, [
         el("h3", { text: "Security Overview" }),
         el("div", { class: "stats-grid" }, [
@@ -309,24 +326,35 @@ function renderUnlocked(handlers) {
           stat("No TOTP", String(handlers.getAuditSummary().noTotp)),
         ]),
       ]),
-    ]),
+      renderPwaCard(handlers),
+    ])]),
+    el("div", { class: "dashboard-grid" }, [renderVersionCard(handlers), renderExportCard(handlers)]),
     el("div", { class: "card" }, [
       el("h3", { text: "Entry Editor" }),
       el("div", { id: "editorHost" }, [el("p", { class: "small muted", text: "Select an entry to view or edit it." })]),
     ]),
     renderAuditCard(handlers),
-    el("div", { class: "card" }, [
-      el("h3", { text: handlers.isShowArchived() ? "Archived Entries" : "Entries" }),
-      renderEntriesTable(handlers),
-    ]),
+    el("div", { class: "card" }, [el("h3", { text: handlers.isShowArchived() ? "Archived Entries" : "Entries" }), renderEntriesTable(handlers)]),
   ].filter(Boolean));
 }
 
-function stat(label, value) {
-  return el("div", { class: "stat-card" }, [
-    el("div", { class: "stat-value", text: value }),
-    el("div", { class: "small muted", text: label }),
+function renderLocked(handlers) {
+  return el("div", { style: "max-width: 520px; margin: 40px auto; text-align: center;" }, [
+    el("div", { style: "font-size: 3rem; margin-bottom: 18px;" }, [el("span", { text: "🔐" })]),
+    el("div", { class: "card" }, [
+      el("h2", { text: "Welcome to ZeroVault" }),
+      el("p", { class: "notice", text: "Offline vault with local encryption, audit tools, TOTP, import preview, restore points, and sensitive-entry controls." }),
+      el("div", { class: "actions centered" }, [
+        el("button", { text: "Create New Vault", onclick: handlers.onGoCreate, style: "width: 100%" }),
+        el("button", { class: "secondary", text: "Open Existing Vault", onclick: handlers.onGoOpen, style: "width: 100%" }),
+      ]),
+    ]),
   ]);
+}
+
+export function render(appRoot, handlers) {
+  appRoot.innerHTML = "";
+  appRoot.appendChild(isUnlocked() ? renderUnlocked(handlers) : renderLocked(handlers));
 }
 
 export function renderEditor(entryOrNull, handlers) {
@@ -342,67 +370,65 @@ export function renderEditor(entryOrNull, handlers) {
   const audit = handlers.getEntryAudit(entry.id);
   const totp = handlers.getEntryTotp(entry.id);
   const generator = handlers.getGeneratorSettings();
-  const canShowSensitive = !entry.isSensitive || handlers.isSensitiveRevealed(entry.id);
+  const sensitiveSettings = handlers.getSensitiveSettings();
+  const show = (field) => !entry.isSensitive || handlers.isSensitiveRevealed(entry.id, field);
   const inputAttrs = (attrs) => {
     if (state.readOnly) attrs.disabled = true;
     return attrs;
   };
-
-  const issues = audit.issues.length
-    ? el("div", { class: "inline wrap", style: "margin-bottom: 14px;" }, audit.issues.map((issue) => el("span", { class: "badge badge-warn", text: issue })))
-    : el("div", { class: "badge badge-ok", text: "No audit issues on this entry." });
+  const issues = [
+    ...audit.issues,
+    ...(entry.validationIssues || []),
+  ];
 
   const form = el("div", { class: "stack-md" }, [
-    issues,
+    issues.length
+      ? el("div", { class: "inline wrap", style: "margin-bottom: 14px;" }, issues.map((issue) => el("span", { class: "badge badge-warn", text: issue })))
+      : el("div", { class: "badge badge-ok", text: "No audit or validation issues on this entry." }),
+    entry.isSensitive ? el("div", { class: "notice" }, [document.createTextNode(`Sensitive reveal timeout: ${sensitiveSettings.revealSeconds}s. Copy ${sensitiveSettings.allowCopy ? "enabled" : "disabled"} for sensitive fields.`)]) : null,
     el("div", { class: "row" }, [
       el("div", {}, [
-        el("label", { text: "Title" }),
-        el("input", inputAttrs({ id: "f_title", type: "text", value: canShowSensitive ? (entry.title || "") : "", placeholder: entry.isSensitive ? "Sensitive title hidden" : "", autocomplete: "off" })),
+        el("label", { for: "f_title", text: "Title" }),
+        el("input", inputAttrs({ id: "f_title", type: "text", value: show("title") ? (entry.title || "") : "", placeholder: entry.isSensitive ? "Sensitive title hidden" : "", autocomplete: "off" })),
+        fieldActionButtons(entry, "title", handlers),
       ]),
       el("div", {}, [
-        el("label", { text: "Category" }),
+        el("label", { for: "f_category", text: "Category" }),
         el("select", inputAttrs({ id: "f_category", value: entry.category || "login" }), categories().map(([value, label]) => el("option", { value, text: label, selected: (entry.category || "login") === value }))),
       ]),
     ]),
     el("div", { class: "row" }, [
       el("div", {}, [
-        el("label", { text: "URL" }),
-        el("input", inputAttrs({ id: "f_url", type: "text", value: canShowSensitive ? (entry.url || "") : "", placeholder: entry.isSensitive ? "Sensitive URL hidden" : "", autocomplete: "off" })),
+        el("label", { for: "f_url", text: "URL" }),
+        el("input", inputAttrs({ id: "f_url", type: "text", value: show("url") ? (entry.url || "") : "", placeholder: entry.isSensitive ? "Sensitive URL hidden" : "", autocomplete: "off" })),
+        fieldActionButtons(entry, "url", handlers),
       ]),
       el("div", {}, [
-        el("label", { text: "Username / Email" }),
-        el("input", inputAttrs({ id: "f_username", type: "text", value: canShowSensitive ? (entry.username || "") : "", placeholder: entry.isSensitive ? "Sensitive username hidden" : "", autocomplete: "off" })),
+        el("label", { for: "f_username", text: "Username / Email" }),
+        el("input", inputAttrs({ id: "f_username", type: "text", value: show("username") ? (entry.username || "") : "", placeholder: entry.isSensitive ? "Sensitive username hidden" : "", autocomplete: "off" })),
+        fieldActionButtons(entry, "username", handlers),
       ]),
     ]),
-    el("div", { class: "row" }, detailFieldSpecs(entry.category || "login").map(([key, label]) =>
-      el("div", {}, [
-        el("label", { text: label }),
-        el("input", inputAttrs({
-          id: `f_detail_${key}`,
-          type: "text",
-          value: canShowSensitive ? String(entry.details?.[key] || "") : "",
-          placeholder: entry.isSensitive ? "Sensitive field hidden" : "",
-          autocomplete: "off"
-        })),
-      ])
-    )),
+    el("div", { class: "row" }, detailFieldSpecs(entry.category || "login").map(([key, label]) => el("div", {}, [
+      el("label", { for: `f_detail_${key}`, text: label }),
+      el("input", inputAttrs({ id: `f_detail_${key}`, type: "text", value: show("details") ? String(entry.details?.[key] || "") : "", placeholder: entry.isSensitive ? "Sensitive field hidden" : "", autocomplete: "off" })),
+    ]))),
+    entry.isSensitive ? fieldActionButtons(entry, "details", handlers) : null,
     el("div", { class: "row" }, [
       el("div", {}, [
-        el("label", { text: "Password" }),
-        el("input", inputAttrs({ id: "f_password", type: "text", value: canShowSensitive ? (entry.password || "") : "", placeholder: entry.isSensitive ? "Sensitive password hidden" : "", autocomplete: "new-password" })),
+        el("label", { for: "f_password", text: "Password" }),
+        el("input", inputAttrs({ id: "f_password", type: "text", value: show("password") ? (entry.password || "") : "", placeholder: entry.isSensitive ? "Sensitive password hidden" : "", autocomplete: "new-password" })),
+        fieldActionButtons(entry, "password", handlers),
       ]),
       el("div", {}, [
-        el("label", { text: "Password Rotation (days)" }),
+        el("label", { for: "f_passwordExpiryDays", text: "Password Rotation (days)" }),
         el("input", inputAttrs({ id: "f_passwordExpiryDays", type: "number", value: entry.passwordExpiryDays || 0, min: "0", max: "3650" })),
       ]),
     ]),
     !state.readOnly ? el("div", { class: "card subtle-card" }, [
       el("h4", { text: "Password Generator" }),
       el("div", { class: "row generator-grid" }, [
-        el("div", {}, [
-          el("label", { text: `Length: ${generator.length}` }),
-          el("input", { id: "g_length", type: "range", min: "12", max: "64", value: generator.length, oninput: handlers.onGeneratorSettingsChange }),
-        ]),
+        el("div", {}, [el("label", { text: `Length: ${generator.length}` }), el("input", { id: "g_length", type: "range", min: "12", max: "64", value: generator.length, oninput: handlers.onGeneratorSettingsChange })]),
         el("div", { class: "inline wrap generator-checks" }, [
           el("label", { class: "inline", style: "cursor:pointer; gap:8px;" }, [el("input", { id: "g_upper", type: "checkbox", checked: generator.includeUpper, onchange: handlers.onGeneratorSettingsChange, style: "width:auto;" }), el("span", { text: "Upper" })]),
           el("label", { class: "inline", style: "cursor:pointer; gap:8px;" }, [el("input", { id: "g_lower", type: "checkbox", checked: generator.includeLower, onchange: handlers.onGeneratorSettingsChange, style: "width:auto;" }), el("span", { text: "Lower" })]),
@@ -418,47 +444,40 @@ export function renderEditor(entryOrNull, handlers) {
       ]),
     ]) : null,
     el("div", { class: "row" }, [
-      el("div", {}, [
-        el("label", { text: "Tags (comma-separated)" }),
-        el("input", inputAttrs({ id: "f_tags", type: "text", value: (entry.tags || []).join(", "), autocomplete: "off" })),
-      ]),
-      el("div", { class: "inline wrap editor-toggles" }, [
-        el("label", { class: "inline", style: "cursor:pointer; gap:8px;" }, [
-          el("input", { id: "f_sensitive", type: "checkbox", checked: entry.isSensitive, onchange: handlers.onSensitiveCheckboxChange, style: "width:auto;" }),
-          el("span", { text: "Sensitive mode" }),
-        ]),
-      ]),
+      el("div", {}, [el("label", { for: "f_tags", text: "Tags (comma-separated)" }), el("input", inputAttrs({ id: "f_tags", type: "text", value: (entry.tags || []).join(", "), autocomplete: "off" }))]),
+      el("div", { class: "inline wrap editor-toggles" }, [el("label", { class: "inline", style: "cursor:pointer; gap:8px;" }, [
+        el("input", { id: "f_sensitive", type: "checkbox", checked: entry.isSensitive, onchange: handlers.onSensitiveCheckboxChange, style: "width:auto;" }),
+        el("span", { text: "Sensitive mode" }),
+      ])]),
     ]),
     el("div", {}, [
-      el("label", { text: "Notes" }),
-      el("textarea", inputAttrs({ id: "f_notes", autocomplete: "off", placeholder: entry.isSensitive && !canShowSensitive ? "Sensitive notes hidden until revealed." : "" })),
+      el("label", { for: "f_notes", text: "Notes" }),
+      el("textarea", inputAttrs({ id: "f_notes", autocomplete: "off", placeholder: entry.isSensitive && !show("notes") ? "Sensitive notes hidden until revealed." : "" })),
+      fieldActionButtons(entry, "notes", handlers),
     ]),
     el("div", { class: "row" }, [
       el("div", {}, [
-        el("label", { text: "Recovery Codes (one per line)" }),
-        el("textarea", inputAttrs({ id: "f_recoveryCodes", autocomplete: "off", placeholder: entry.isSensitive && !canShowSensitive ? "Sensitive recovery codes hidden." : "" })),
+        el("label", { for: "f_recoveryCodes", text: "Recovery Codes (one per line)" }),
+        el("textarea", inputAttrs({ id: "f_recoveryCodes", autocomplete: "off", placeholder: entry.isSensitive && !show("recoveryCodes") ? "Sensitive recovery codes hidden." : "" })),
+        fieldActionButtons(entry, "recoveryCodes", handlers),
       ]),
       el("div", {}, [
-        el("label", { text: "Attachment References (one per line)" }),
-        el("textarea", inputAttrs({ id: "f_attachmentRefs", autocomplete: "off", placeholder: "File paths or document references only" })),
+        el("label", { for: "f_attachmentRefs", text: "Attachment References (one per line)" }),
+        el("textarea", inputAttrs({ id: "f_attachmentRefs", autocomplete: "off", placeholder: entry.isSensitive && !show("attachmentRefs") ? "Sensitive attachment refs hidden." : "File paths or document references only" })),
+        fieldActionButtons(entry, "attachmentRefs", handlers),
       ]),
     ]),
     el("div", { class: "card subtle-card" }, [
       el("h4", { text: "TOTP / 2FA" }),
       el("div", { class: "row" }, [
         el("div", {}, [
-          el("label", { text: "Base32 Secret" }),
-          el("input", inputAttrs({ id: "f_totpSecret", type: "text", value: canShowSensitive ? (entry.totpSecret || "") : "", placeholder: entry.isSensitive ? "Sensitive TOTP secret hidden" : "JBSWY3DPEHPK3PXP", autocomplete: "off" })),
+          el("label", { for: "f_totpSecret", text: "Base32 Secret" }),
+          el("input", inputAttrs({ id: "f_totpSecret", type: "text", value: show("totpSecret") ? (entry.totpSecret || "") : "", placeholder: entry.isSensitive ? "Sensitive TOTP secret hidden" : "JBSWY3DPEHPK3PXP", autocomplete: "off" })),
+          fieldActionButtons(entry, "totpSecret", handlers),
         ]),
         el("div", { class: "row" }, [
-          el("div", {}, [
-            el("label", { text: "Digits" }),
-            el("input", inputAttrs({ id: "f_totpDigits", type: "number", value: entry.totpDigits || 6, min: "6", max: "8" })),
-          ]),
-          el("div", {}, [
-            el("label", { text: "Period (sec)" }),
-            el("input", inputAttrs({ id: "f_totpPeriod", type: "number", value: entry.totpPeriod || 30, min: "15", max: "90" })),
-          ]),
+          el("div", {}, [el("label", { for: "f_totpDigits", text: "Digits" }), el("input", inputAttrs({ id: "f_totpDigits", type: "number", value: entry.totpDigits || 6, min: "6", max: "8" }))]),
+          el("div", {}, [el("label", { for: "f_totpPeriod", text: "Period (sec)" }), el("input", inputAttrs({ id: "f_totpPeriod", type: "number", value: entry.totpPeriod || 30, min: "15", max: "90" }))]),
         ]),
       ]),
       el("div", { class: "inline wrap" }, [
@@ -473,7 +492,7 @@ export function renderEditor(entryOrNull, handlers) {
       document.createTextNode(`Password versions: ${(entry.passwordHistory || []).length}`),
     ]),
     el("div", { class: "actions wrap" }, [
-      entry.isSensitive && !canShowSensitive && !state.readOnly ? el("button", { class: "secondary", text: "Reveal Sensitive Fields", onclick: () => handlers.onToggleSensitiveReveal(entry.id) }) : null,
+      entry.isSensitive && !state.readOnly ? el("button", { class: "secondary", text: handlers.isSensitiveRevealed(entry.id) ? "Hide All Sensitive Fields" : "Reveal All Sensitive Fields", onclick: () => handlers.onToggleSensitiveReveal(entry.id) }) : null,
       !state.readOnly ? el("button", { text: "Save Entry", onclick: () => handlers.onSaveEntry(entry.id) }) : null,
       el("button", { class: "secondary", text: state.readOnly ? "Close" : "Cancel", onclick: handlers.onCancelEdit }),
     ].filter(Boolean)),
@@ -481,33 +500,29 @@ export function renderEditor(entryOrNull, handlers) {
 
   host.appendChild(form);
   const notes = document.getElementById("f_notes");
-  if (notes && canShowSensitive) notes.value = entry.notes || "";
+  if (notes && show("notes")) notes.value = entry.notes || "";
   const recovery = document.getElementById("f_recoveryCodes");
-  if (recovery && canShowSensitive) recovery.value = (entry.recoveryCodes || []).join("\n");
+  if (recovery && show("recoveryCodes")) recovery.value = (entry.recoveryCodes || []).join("\n");
   const attachments = document.getElementById("f_attachmentRefs");
-  if (attachments) attachments.value = (entry.attachmentRefs || []).join("\n");
+  if (attachments && show("attachmentRefs")) attachments.value = (entry.attachmentRefs || []).join("\n");
 
   if (entry.history?.length) {
     host.appendChild(el("div", { class: "card subtle-card", style: "margin-top: 16px;" }, [
       el("h4", { text: "Version History" }),
-      el("div", { class: "stack-sm" }, entry.history.slice(0, 10).map((item, index) =>
-        el("div", { class: "inline wrap history-row" }, [
-          el("span", { class: "small muted", text: `${new Date(item.savedAt).toLocaleString()}${item.reason ? ` (${item.reason})` : ""}` }),
-          !state.readOnly ? el("button", { class: "secondary small", text: "Restore", onclick: () => handlers.onRestoreHistory(entry.id, index) }) : null,
-        ].filter(Boolean))
-      )),
+      el("div", { class: "stack-sm" }, entry.history.slice(0, 10).map((item, index) => el("div", { class: "inline wrap history-row" }, [
+        el("span", { class: "small muted", text: `${new Date(item.savedAt).toLocaleString()}${item.reason ? ` (${item.reason})` : ""}` }),
+        !state.readOnly ? el("button", { class: "secondary small", text: "Restore", onclick: () => handlers.onRestoreHistory(entry.id, index) }) : null,
+      ].filter(Boolean)))),
     ]));
   }
 
   if ((entry.passwordHistory || []).length) {
     host.appendChild(el("div", { class: "card subtle-card", style: "margin-top: 16px;" }, [
       el("h4", { text: "Password History" }),
-      el("div", { class: "stack-sm" }, entry.passwordHistory.slice(0, 5).map((item) =>
-        el("div", { class: "inline wrap history-row" }, [
-          el("span", { class: "small muted", text: `${new Date(item.changedAt).toLocaleString()}` }),
-          el("span", { class: "badge", text: item.value ? "Stored previous password" : "Empty" }),
-        ])
-      )),
+      el("div", { class: "stack-sm" }, entry.passwordHistory.slice(0, 5).map((item) => el("div", { class: "inline wrap history-row" }, [
+        el("span", { class: "small muted", text: `${new Date(item.changedAt).toLocaleString()}` }),
+        el("span", { class: "badge", text: item.value ? "Stored previous password" : "Empty" }),
+      ]))),
     ]));
   }
 }
@@ -519,19 +534,14 @@ export function getEditorFormValues() {
     username: document.getElementById("f_username")?.value ?? "",
     password: document.getElementById("f_password")?.value ?? "",
     notes: document.getElementById("f_notes")?.value ?? "",
-    tags: (document.getElementById("f_tags")?.value ?? "")
-      .split(",")
-      .map((tag) => tag.trim())
-      .filter(Boolean),
+    tags: (document.getElementById("f_tags")?.value ?? "").split(",").map((tag) => tag.trim()).filter(Boolean),
     totpSecret: document.getElementById("f_totpSecret")?.value ?? "",
     totpDigits: Number(document.getElementById("f_totpDigits")?.value ?? 6) || 6,
     totpPeriod: Number(document.getElementById("f_totpPeriod")?.value ?? 30) || 30,
     passwordExpiryDays: Number(document.getElementById("f_passwordExpiryDays")?.value ?? 0) || 0,
     category: document.getElementById("f_category")?.value ?? "login",
     isSensitive: !!document.getElementById("f_sensitive")?.checked,
-    details: Object.fromEntries(
-      Array.from(document.querySelectorAll("[id^='f_detail_']")).map((node) => [node.id.replace("f_detail_", ""), node.value ?? ""])
-    ),
+    details: Object.fromEntries(Array.from(document.querySelectorAll("[id^='f_detail_']")).map((node) => [node.id.replace("f_detail_", ""), node.value ?? ""])),
     recoveryCodes: (document.getElementById("f_recoveryCodes")?.value ?? "").split("\n").map((line) => line.trim()).filter(Boolean),
     attachmentRefs: (document.getElementById("f_attachmentRefs")?.value ?? "").split("\n").map((line) => line.trim()).filter(Boolean),
   };

@@ -13,7 +13,11 @@ export const state = {
   lastSavedAt: null,
   lastSavedFileName: null,
   upgradeAvailable: false,
-  lastUndoSnapshot: null,
+  historyStack: [],
+  maxHistoryEntries: 30,
+  pendingInstallPrompt: null,
+  pwaStatus: "Browser install unavailable",
+  updateReady: false,
 };
 
 export function isUnlocked() {
@@ -27,7 +31,9 @@ export function setUnlocked(meta, data) {
   state.changeLog = { added: 0, edited: 0, deleted: 0, archived: 0, imported: 0 };
   state.hasUnsavedChanges = false;
   state.lastSavedAt = null;
+  state.lastSavedFileName = null;
   state.upgradeAvailable = false;
+  state.historyStack = [];
   syncSettingsFromVault();
 }
 
@@ -52,12 +58,19 @@ export function markSaved(fileName) {
   state.changeLog = { added: 0, edited: 0, deleted: 0, archived: 0, imported: 0 };
 }
 
-export function rememberUndoSnapshot(snapshot) {
-  state.lastUndoSnapshot = snapshot;
+export function pushHistorySnapshot(snapshot) {
+  state.historyStack.unshift(snapshot);
+  if (state.historyStack.length > state.maxHistoryEntries) {
+    state.historyStack.length = state.maxHistoryEntries;
+  }
 }
 
-export function clearUndoSnapshot() {
-  state.lastUndoSnapshot = null;
+export function popHistorySnapshot() {
+  return state.historyStack.shift() || null;
+}
+
+export function clearHistorySnapshots() {
+  state.historyStack = [];
 }
 
 export function wipeSensitive() {
@@ -90,7 +103,10 @@ export function wipeSensitive() {
   state.lastSavedAt = null;
   state.lastSavedFileName = null;
   state.upgradeAvailable = false;
-  state.lastUndoSnapshot = null;
+  state.historyStack = [];
+  state.pendingInstallPrompt = null;
+  state.pwaStatus = "Browser install unavailable";
+  state.updateReady = false;
 }
 
 export function resetInactivityTimer(onTimeoutLock) {
