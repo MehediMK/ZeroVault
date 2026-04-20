@@ -2,286 +2,238 @@ import { state, isUnlocked } from "./state.js";
 import { getDomainColor, getInitials, timeAgo } from "./helpers.js";
 
 function el(tag, attrs = {}, children = []) {
-  const n = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (k === "class") n.className = v;
-    else if (k === "text") n.textContent = v;
-    else if (k.startsWith("on") && typeof v === "function") n.addEventListener(k.slice(2), v);
-    else if (k === "checked" || k === "disabled" || k === "selected" || k === "value") n[k] = v;
-    else if (v !== undefined && v !== null && v !== false) n.setAttribute(k, v);
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs)) {
+    if (key === "class") node.className = value;
+    else if (key === "text") node.textContent = value;
+    else if (key === "html") node.innerHTML = value;
+    else if (key.startsWith("on") && typeof value === "function") node.addEventListener(key.slice(2), value);
+    else if (["checked", "disabled", "selected", "value"].includes(key)) node[key] = value;
+    else if (value !== undefined && value !== null && value !== false) node.setAttribute(key, value);
   }
-  for (const c of children) {
-    if (c) n.appendChild(c);
+  for (const child of children) {
+    if (child) node.appendChild(child);
   }
-  return n;
+  return node;
 }
 
 export function render(appRoot, handlers) {
   appRoot.innerHTML = "";
-  if (!isUnlocked()) {
-    appRoot.appendChild(renderLocked(handlers));
-  } else {
-    appRoot.appendChild(renderUnlocked(handlers));
-  }
+  appRoot.appendChild(isUnlocked() ? renderUnlocked(handlers) : renderLocked(handlers));
 }
 
 function renderLocked(handlers) {
-  const wrapper = el("div", { style: "max-width: 460px; margin: 40px auto; text-align: center;" }, [
-    el("div", { style: "font-size: 3rem; margin-bottom: 20px;" }, [
-      el("span", { text: "🔐" })
-    ]),
+  return el("div", { style: "max-width: 520px; margin: 40px auto; text-align: center;" }, [
+    el("div", { style: "font-size: 3rem; margin-bottom: 18px;" }, [el("span", { text: "🔐" })]),
     el("div", { class: "card" }, [
       el("h2", { text: "Welcome to ZeroVault" }),
-      el("p", { class: "notice", text: "Secure, offline-first password management in your browser." }),
+      el("p", { class: "notice", text: "Offline password storage with local encryption, import tools, audit checks, and TOTP support." }),
       el("div", { class: "actions centered" }, [
         el("button", { text: "Create New Vault", onclick: handlers.onGoCreate, style: "width: 100%" }),
         el("button", { class: "secondary", text: "Open Existing Vault", onclick: handlers.onGoOpen, style: "width: 100%" }),
       ]),
     ]),
-
     el("div", { class: "card", style: "border: 1px dashed var(--border); background: transparent;" }, [
-      el("h3", { text: "Security & Privacy", style: "border:none; margin-bottom: 10px; font-size: 1rem;" }),
+      el("h3", { text: "Included Now", style: "border:none; margin-bottom: 10px; font-size: 1rem;" }),
       el("ul", { class: "small", style: "text-align: left; padding-left: 20px; color: var(--muted);" }, [
-        el("li", { text: "End-to-end encrypted locally (AES-GCM)." }),
-        el("li", { text: "Zero knowledge: We never see your password." }),
-        el("li", { text: "No cloud sync: You own your data file." }),
+        el("li", { text: "Password generator and vault health audit." }),
+        el("li", { text: "Configurable auto-lock saved inside the encrypted vault." }),
+        el("li", { text: "CSV/Bitwarden imports and offline TOTP codes." }),
       ]),
-    ])
+    ]),
   ]);
-
-  return wrapper;
 }
 
-function renderUnlocked(handlers) {
-  const { vaultData } = state;
-
-  const banner = state.readOnly
-    ? el("div", { class: "card", style: "border-left: 5px solid orange; background: #fff8e1; color: #b7791f;" }, [
-      el("strong", { text: "Emergency Read-Only Mode: " }),
-      el("span", { text: "Editing & Clipboard are disabled." })
-    ])
-    : null;
-
+function renderSummaryCard(handlers) {
+  const audit = handlers.getAuditSummary();
+  const cryptoInfo = handlers.getCryptoSummary();
+  const fileInfo = handlers.getFileSummary();
   const actions = [
     !state.readOnly ? el("button", { text: "Add Entry", onclick: handlers.onAddEntry }) : null,
-    !state.readOnly ? el("button", { class: "secondary", text: "Save & Download Vault JSON", onclick: handlers.onSaveDownload }) : null,
+    !state.readOnly ? el("button", { class: "secondary", text: "Import", onclick: handlers.onGoImport }) : null,
+    !state.readOnly ? el("button", { class: "secondary", text: "Security", onclick: handlers.onGoSecurity }) : null,
+    !state.readOnly ? el("button", { class: "secondary", text: "Save & Download", onclick: handlers.onSaveDownload }) : null,
     !state.readOnly ? el("button", { class: "secondary", text: "Change Master Password", onclick: handlers.onGoChangePassword }) : null,
     !state.readOnly ? el("button", { class: "secondary", text: "Mobile Transfer (QR)", onclick: handlers.onGoQR }) : null,
     !state.readOnly ? el("button", { class: "secondary", text: "Switch to Read-Only", onclick: handlers.onSwitchReadOnly }) : null,
   ].filter(Boolean);
 
-  const top = el("div", { class: "card" }, [
-    el("div", { class: "inline" }, [
-      el("span", { class: "badge", text: `Unlocked: ${vaultData.vaultName || "Vault"}` }),
-      el("span", { class: "small", text: `Entries: ${vaultData.entries?.length ?? 0}` }),
+  return el("div", { class: "card" }, [
+    el("div", { class: "stack-sm" }, [
+      el("div", { class: "inline wrap" }, [
+        el("span", { class: "badge", text: `Unlocked: ${state.vaultData.vaultName}` }),
+        el("span", { class: `badge ${state.hasUnsavedChanges ? "badge-warn" : "badge-ok"}`, text: state.hasUnsavedChanges ? "Unsaved changes" : "Saved state clean" }),
+        el("span", { class: "small", text: `Entries: ${state.vaultData.entries.length}` }),
+      ]),
+      el("div", { class: "small muted" }, [
+        document.createTextNode(`File: ${fileInfo.name}`),
+      ]),
+      el("div", { class: "small muted" }, [
+        document.createTextNode(`Last download: ${fileInfo.lastSaved}`),
+      ]),
+      el("div", { class: "small muted" }, [
+        document.createTextNode(`Crypto: ${cryptoInfo.current}`),
+      ]),
+      el("div", { class: "small muted" }, [
+        document.createTextNode(`Audit: ${audit.weak} weak, ${audit.reused} reused, ${audit.old} old, ${audit.noTotp} missing TOTP`),
+      ]),
     ]),
     el("div", { class: "actions" }, actions),
   ]);
+}
 
-  const searchRow = el("div", { class: "card" }, [
+function renderInsightsCard(handlers) {
+  const audit = handlers.getAuditSummary();
+  const cryptoInfo = handlers.getCryptoSummary();
+  const notices = [];
+  if (cryptoInfo.upgradeAvailable) notices.push(`Vault is using ${cryptoInfo.current}; preferred target is ${cryptoInfo.preferred}.`);
+  if (!cryptoInfo.argon2Available) notices.push("Argon2id migration path is wired, but no Argon2id adapter is bundled yet.");
+  if (audit.weak > 0) notices.push(`${audit.weak} entries need stronger passwords.`);
+  if (audit.reused > 0) notices.push(`${audit.reused} entries reuse passwords.`);
+
+  return el("div", { class: "card" }, [
+    el("h3", { text: "Security Overview" }),
+    el("div", { class: "stats-grid" }, [
+      stat("Weak", String(audit.weak)),
+      stat("Reused", String(audit.reused)),
+      stat("Old", String(audit.old)),
+      stat("No TOTP", String(audit.noTotp)),
+    ]),
+    notices.length
+      ? el("div", { class: "stack-sm", style: "margin-top: 16px;" }, notices.map((notice) => el("div", { class: "notice" }, [document.createTextNode(notice)])))
+      : el("p", { class: "small ok", text: "No immediate audit findings." }),
+  ]);
+}
+
+function stat(label, value) {
+  return el("div", { class: "stat-card" }, [
+    el("div", { class: "stat-value", text: value }),
+    el("div", { class: "small muted", text: label }),
+  ]);
+}
+
+function renderSearchCard(handlers) {
+  const filter = handlers.getFilterState();
+  return el("div", { class: "card" }, [
     el("h3", { text: "Search & Filter" }),
     el("div", { class: "row" }, [
       el("div", {}, [
         el("label", { text: "Query" }),
-        el("input", { id: "searchQuery", type: "text", placeholder: "title / url / username / tag" }),
+        el("input", { id: "searchQuery", type: "text", value: filter.q, placeholder: "title / url / username / tag" }),
       ]),
       el("div", {}, [
-        el("label", { text: "Filter by tag (optional)" }),
-        el("input", { id: "searchTag", type: "text", placeholder: "e.g. work" }),
+        el("label", { text: "Tag" }),
+        el("input", { id: "searchTag", type: "text", value: filter.tag, placeholder: "e.g. work" }),
       ]),
-      el("div", { style: "display:flex; flex-direction: column; gap: 8px; justify-content: flex-end; padding-bottom: 4px;" }, [
-        el("label", { style: "cursor:pointer; display:flex; align-items:center; gap:5px;" }, [
-          el("input", { type: "checkbox", checked: handlers.isFavoritesFilterOn(), onchange: handlers.onToggleFavoriteFilter }),
-          el("span", { text: "Favorites Only" })
-        ]),
-        el("label", { style: "cursor:pointer; display:flex; align-items:center; gap:5px;" }, [
-          el("input", { type: "checkbox", checked: handlers.isShowArchived(), onchange: handlers.onToggleArchiveFilter }),
-          el("span", { text: "Show Archived Only" })
-        ])
+      el("div", { class: "stack-sm", style: "justify-content: end;" }, [
+        checkbox("Favorites only", filter.favoritesOnly, handlers.onToggleFavoriteFilter),
+        checkbox("Show archived only", filter.showArchived, handlers.onToggleArchiveFilter),
       ]),
     ]),
     el("div", { class: "actions" }, [
-      el("button", { class: "secondary", text: "Apply", onclick: () => handlers.onApplySearch() }),
-      el("button", { class: "secondary", text: "Clear", onclick: () => handlers.onClearSearch() }),
+      el("button", { class: "secondary", text: "Apply", onclick: handlers.onApplySearch }),
+      el("button", { class: "secondary", text: "Clear", onclick: handlers.onClearSearch }),
     ]),
   ]);
+}
 
-  const viewTitle = handlers.isShowArchived() ? "Archived Entries" : "Entries";
-  const tableCard = el("div", { class: "card" }, [
-    el("h3", { text: viewTitle }),
-    renderEntriesTable(handlers),
+function checkbox(label, checked, handler) {
+  return el("label", { class: "inline", style: "cursor:pointer; gap:8px;" }, [
+    el("input", { type: "checkbox", checked, onchange: handler, style: "width:auto;" }),
+    el("span", { text: label }),
   ]);
-
-  const editor = el("div", { class: "card" }, [
-    el("h3", { text: "Entry Editor" }),
-    el("p", { class: "small", text: "Select an entry to view details." }),
-    el("div", { id: "editorHost" }),
-  ]);
-
-
-  const dragActions = el("div", { id: "drag-actions" }, [
-    el("div", {
-      class: "drag-action-btn favorite-zone",
-      ondragover: (e) => { e.preventDefault(); e.currentTarget.classList.add("drop-target-hover"); },
-      ondragleave: (e) => { e.currentTarget.classList.remove("drop-target-hover"); },
-      ondrop: (e) => {
-        e.preventDefault();
-        e.currentTarget.classList.remove("drop-target-hover");
-        const id = e.dataTransfer.getData("text/plain");
-        if (id) handlers.onToggleFavorite(id);
-        document.getElementById("drag-actions").classList.remove("visible");
-      }
-    }, [el("span", { text: "★ Favorite" })]),
-
-    el("div", {
-      class: "drag-action-btn archive-zone",
-      ondragover: (e) => { e.preventDefault(); e.currentTarget.classList.add("drop-target-hover"); },
-      ondragleave: (e) => { e.currentTarget.classList.remove("drop-target-hover"); },
-      ondrop: (e) => {
-        e.preventDefault();
-        e.currentTarget.classList.remove("drop-target-hover");
-        const id = e.dataTransfer.getData("text/plain");
-        if (id) handlers.onArchiveEntry(id);
-        document.getElementById("drag-actions").classList.remove("visible");
-      }
-    }, [el("span", { text: "🗑 Archive" })]),
-  ]);
-
-  return el("div", {}, [banner, top, searchRow, tableCard, editor, dragActions].filter(Boolean));
 }
 
 function renderEntriesTable(handlers) {
   const entries = handlers.getVisibleEntries();
-
   const table = el("table", { class: "table" });
   const thead = el("thead", {}, [
     el("tr", {}, [
-      el("th", { text: "" }), // Star col
+      el("th", { text: "" }),
       el("th", { text: "Identity" }),
-      el("th", { text: "Username" }),
-      el("th", { text: "Password" }),
-      el("th", { text: "Tags" }),
+      el("th", { text: "Health" }),
+      el("th", { text: "TOTP" }),
       el("th", { text: "Updated" }),
       el("th", { text: "Actions" }),
     ]),
   ]);
-
   const tbody = el("tbody");
-  entries.forEach((e, index) => {
-    // Generate Visual Identity
-    const initials = getInitials(e.title || e.url || "??");
-    const color = getDomainColor(e.title || e.url || "??");
 
-    // Actions
-    let actionButtons = [];
-    if (e.archived) {
-      actionButtons = [
-        !state.readOnly ? el("button", { class: "secondary", text: "Restore", onclick: () => handlers.onRestoreEntry(e.id) }) : null,
-        !state.readOnly ? el("button", { class: "danger", text: "Delete Permanently", onclick: () => handlers.onInitiateDelete(e.id) }) : null,
-      ];
-    } else {
-      const deleteBtn = handlers.isEntryDeleting(e.id)
-        ? [
-          el("button", { class: "danger", text: "Confirm", onclick: () => handlers.onDeleteEntry(e.id) }),
-          el("button", { class: "secondary", text: "Cancel", onclick: () => handlers.onCancelDelete(e.id) }),
-        ]
-        : [
-          !state.readOnly ? el("button", { class: "danger", text: "Archive", onclick: () => handlers.onArchiveEntry(e.id) }) : null,
-        ];
-
-      actionButtons = [
-        el("button", { class: "secondary", text: state.readOnly ? "View" : "Edit", onclick: () => handlers.onEditEntry(e.id) }),
-        !state.readOnly ? el("button", { class: "secondary", text: "Copy Pass", onclick: () => handlers.onCopyPassword(e.id) }) : null,
-        ...deleteBtn
-      ];
-    }
-
-    const trClass = [
-      handlers.isKeyboardSelected(index) ? "selected" : "",
-      e.archived ? "archived" : ""
-    ].filter(Boolean).join(" ");
-
-    tbody.appendChild(
-      el("tr", { class: trClass }, [
-        el("td", {}, [
-          el("span", {
-            text: e.isFavorite ? "★" : "☆",
-            style: `cursor:pointer; font-size: 1.2em; color: ${e.isFavorite ? "#ffc107" : "#ccc"}`,
-            title: "Toggle Favorite",
-            onclick: () => handlers.onToggleFavorite(e.id)
-          })
-        ]),
-        el("td", {}, [
-          el("div", { class: "title-cell" }, [
-            el("div", { class: "entry-icon", style: `background-color: ${color}`, text: initials }),
-            el("div", { style: "display:flex; flex-direction:column;" }, [
-              el("span", { class: "title-text", text: e.title || "(No Title)" }),
-              el("span", { class: "meta-text", text: e.url || "" })
-            ])
-          ])
-        ]),
-        el("td", {}, [
-          el("div", { class: "inline" }, [
-            el("span", { text: e.username || "" }),
-            e.username ? el("button", { class: "small secondary", text: "📋", title: "Copy Username", onclick: () => handlers.onCopyUsername(e.id) }) : null
-          ])
-        ]),
-        el("td", {}, [
-          el("div", { style: "display: flex; align-items: center; gap: 8px;" }, [
-            el("span", { text: handlers.isPasswordVisible(e.id) ? (e.password || "") : "••••••••" }),
-            el("button", {
-              class: "small secondary",
-              style: "padding: 2px 6px; min-width: auto;",
-              text: handlers.isPasswordVisible(e.id) ? "🙈" : "👁️",
-              onclick: () => handlers.onTogglePassword(e.id)
-            })
-          ])
-        ]),
-        el("td", { text: (e.tags || []).join(", ") }),
-        el("td", { class: "small", text: timeAgo(e.updatedAt || e.createdAt) }),
-        el("td", {}, [el("div", { class: "inline" }, actionButtons.filter(Boolean))]),
-        el("td", {}, [el("div", { class: "inline" }, actionButtons.filter(Boolean))]),
+  for (const entry of entries) {
+    const initials = getInitials(entry.title || entry.url || "?");
+    const color = getDomainColor(entry.title || entry.url || "entry");
+    const audit = handlers.getEntryAudit(entry.id);
+    const totpStatus = entry.totpSecret ? "Ready" : "Missing";
+    const row = el("tr", { class: handlers.isEntrySelected(entry.id) ? "selected" : entry.archived ? "archived" : "" }, [
+      el("td", {}, [
+        el("span", {
+          text: entry.isFavorite ? "★" : "☆",
+          style: `cursor:pointer; font-size: 1.2rem; color: ${entry.isFavorite ? "#ffc107" : "#9aa3b2"}`,
+          onclick: () => handlers.onToggleFavorite(entry.id),
+        }),
       ]),
-      // Drag Attributes
-      e.archived ? [] : [
-        el("div", {
-          draggable: "true",
-          ondragstart: (ev) => {
-            ev.dataTransfer.setData("text/plain", e.id);
-            ev.dataTransfer.effectAllowed = "move";
-            ev.currentTarget.classList.add("draggable-source");
-            document.getElementById("drag-actions")?.classList.add("visible");
-          },
-          ondragend: (ev) => {
-            ev.currentTarget.classList.remove("draggable-source");
-            document.getElementById("drag-actions")?.classList.remove("visible");
-          }
-        })
-      ]
-    );
-
-    // Apply attributes directly to TR because el() helper appends children but TR needs listeners
-    const tr = tbody.lastChild;
-    if (!e.archived) {
-      tr.draggable = true;
-      tr.addEventListener("dragstart", (ev) => {
-        ev.dataTransfer.setData("text/plain", e.id);
-        ev.dataTransfer.effectAllowed = "move";
-        tr.classList.add("draggable-source");
-        document.getElementById("drag-actions")?.classList.add("visible");
-      });
-      tr.addEventListener("dragend", (ev) => {
-        tr.classList.remove("draggable-source");
-        document.getElementById("drag-actions")?.classList.remove("visible");
-      });
-    }
-  });
+      el("td", {}, [
+        el("div", { class: "title-cell" }, [
+          el("div", { class: "entry-icon", style: `background-color: ${color}`, text: initials }),
+          el("div", { class: "stack-sm" }, [
+            el("span", { class: "title-text", text: entry.title || "(No title)" }),
+            el("span", { class: "meta-text", text: entry.username || entry.url || "" }),
+          ]),
+        ]),
+      ]),
+      el("td", {}, [
+        el("span", { class: `badge ${audit.score > 2 ? "badge-danger" : audit.score > 0 ? "badge-warn" : "badge-ok"}`, text: audit.score > 0 ? `${audit.score} issues` : "Healthy" }),
+      ]),
+      el("td", {}, [el("span", { class: `badge ${entry.totpSecret ? "badge-ok" : ""}`, text: totpStatus })]),
+      el("td", { class: "small", text: timeAgo(entry.updatedAt || entry.createdAt) }),
+      el("td", {}, [
+        el("div", { class: "inline wrap" }, [
+          el("button", { class: "secondary small", text: state.readOnly ? "View" : "Edit", onclick: () => handlers.onEditEntry(entry.id) }),
+          !state.readOnly ? el("button", { class: "secondary small", text: "Copy", onclick: () => handlers.onCopyPassword(entry.id) }) : null,
+          entry.totpSecret && !state.readOnly ? el("button", { class: "secondary small", text: "OTP", onclick: () => handlers.onCopyTotp(entry.id) }) : null,
+          entry.archived
+            ? !state.readOnly ? el("button", { class: "secondary small", text: "Restore", onclick: () => handlers.onRestoreEntry(entry.id) }) : null
+            : !state.readOnly ? el("button", { class: "danger small", text: "Archive", onclick: () => handlers.onArchiveEntry(entry.id) }) : null,
+          !state.readOnly && !entry.archived
+            ? handlers.isEntryDeleting(entry.id)
+              ? el("button", { class: "danger small", text: "Confirm Delete", onclick: () => handlers.onDeleteEntry(entry.id) })
+              : el("button", { class: "secondary small", text: "Delete", onclick: () => handlers.onInitiateDelete(entry.id) })
+            : null,
+          !state.readOnly && handlers.isEntryDeleting(entry.id)
+            ? el("button", { class: "secondary small", text: "Cancel", onclick: () => handlers.onCancelDelete(entry.id) })
+            : null,
+        ].filter(Boolean)),
+      ]),
+    ]);
+    tbody.appendChild(row);
+  }
 
   table.appendChild(thead);
   table.appendChild(tbody);
-
-  // Wrap table in responsive container
   return el("div", { class: "table-wrapper" }, [table]);
+}
+
+function renderUnlocked(handlers) {
+  const editor = el("div", { class: "card" }, [
+    el("h3", { text: "Entry Editor" }),
+    el("div", { id: "editorHost" }, [el("p", { class: "small muted", text: "Select an entry to view or edit it." })]),
+  ]);
+
+  return el("div", {}, [
+    state.readOnly
+      ? el("div", { class: "card notice" }, [document.createTextNode("Emergency Read-Only Mode is active. Editing and clipboard actions are disabled.")])
+      : null,
+    renderSummaryCard(handlers),
+    el("div", { class: "dashboard-grid" }, [
+      renderInsightsCard(handlers),
+      renderSearchCard(handlers),
+    ]),
+    el("div", { class: "card" }, [
+      el("h3", { text: handlers.isShowArchived() ? "Archived Entries" : "Entries" }),
+      renderEntriesTable(handlers),
+    ]),
+    editor,
+  ].filter(Boolean));
 }
 
 export function renderEditor(entryOrNull, handlers) {
@@ -290,173 +242,170 @@ export function renderEditor(entryOrNull, handlers) {
   host.innerHTML = "";
 
   if (!entryOrNull) {
-    host.appendChild(el("div", { class: "notice", text: "No entry selected." }));
+    host.appendChild(el("p", { class: "small muted", text: "No entry selected." }));
     return;
   }
 
-  const e = entryOrNull;
-
   const isRO = state.readOnly;
-  const inputAttrs = (base) => {
-    if (isRO) base.disabled = "true";
-    return base;
+  const entry = entryOrNull;
+  const audit = handlers.getEntryAudit(entry.id);
+  const totp = handlers.getEntryTotp(entry.id);
+  const inputAttrs = (attrs) => {
+    if (isRO) attrs.disabled = true;
+    return attrs;
   };
 
-  const form = el("div", {}, [
+  const issues = audit.issues.length
+    ? el("div", { class: "inline wrap", style: "margin-bottom: 14px;" }, audit.issues.map((issue) => el("span", { class: "badge badge-warn", text: issue })))
+    : el("div", { class: "badge badge-ok", text: "No audit issues on this entry." });
+
+  const form = el("div", { class: "stack-md" }, [
+    issues,
     el("div", { class: "row" }, [
       el("div", {}, [
         el("label", { text: "Title" }),
-        el("input", inputAttrs({ id: "f_title", type: "text", value: e.title || "", autocomplete: "off" })),
+        el("input", inputAttrs({ id: "f_title", type: "text", value: entry.title || "", autocomplete: "off" })),
       ]),
       el("div", {}, [
         el("label", { text: "URL" }),
-        el("input", inputAttrs({ id: "f_url", type: "text", value: e.url || "", autocomplete: "off" })),
+        el("input", inputAttrs({ id: "f_url", type: "text", value: entry.url || "", autocomplete: "off" })),
       ]),
     ]),
     el("div", { class: "row" }, [
       el("div", {}, [
         el("label", { text: "Username / Email" }),
-        el("input", inputAttrs({ id: "f_username", type: "text", value: e.username || "", autocomplete: "off" })),
+        el("input", inputAttrs({ id: "f_username", type: "text", value: entry.username || "", autocomplete: "off" })),
       ]),
       el("div", {}, [
         el("label", { text: "Password" }),
-        el("input", inputAttrs({ id: "f_password", type: "password", value: e.password || "", autocomplete: "new-password" })),
-
-        // Visual Password Timeline
-        e.updatedAt ? el("div", { style: "margin-top: 8px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px; font-size: 0.85rem;" }, [
-          el("div", { style: "display:flex; justify-content:space-between; margin-bottom:5px;" }, [
-            el("span", { text: "Time since update:", style: "color:var(--muted);" }),
-            el("span", { text: timeAgo(e.updatedAt), style: "font-weight:600; color:var(--text);" })
-          ]),
-          el("div", { style: "height: 6px; background: #333; border-radius: 3px; overflow: hidden; position: relative;" }, [
-            el("div", {
-              style: `
-                    width: ${Math.min(100, (new Date() - new Date(e.updatedAt)) / (1000 * 60 * 60 * 24 * 365) * 100)}%; 
-                    height: 100%; 
-                    background: linear-gradient(90deg, #5cffb0, #ff5c7a);
-                    opacity: 0.7;
-                 `})
-          ]),
-          el("div", { class: "small", style: "margin-top:4px; text-align:right;" }, [
-            el("span", { text: "Secure" }),
-            el("span", { text: " • ", style: "margin:0 4px;" }),
-            el("span", { text: "Review needed", style: "color:var(--danger);" })
-          ])
-        ]) : null
+        el("input", inputAttrs({ id: "f_password", type: "text", value: entry.password || "", autocomplete: "new-password" })),
+        !isRO ? el("div", { class: "actions" }, [
+          el("button", { class: "secondary small", text: "Generate", onclick: () => handlers.onGeneratePassword(entry.id) }),
+          el("button", { class: "secondary small", text: "Copy Password", onclick: () => handlers.onCopyPassword(entry.id) }),
+        ]) : null,
       ]),
     ]),
     el("div", { class: "row" }, [
       el("div", {}, [
         el("label", { text: "Tags (comma-separated)" }),
-        el("input", inputAttrs({ id: "f_tags", type: "text", value: (e.tags || []).join(", "), autocomplete: "off" })),
+        el("input", inputAttrs({ id: "f_tags", type: "text", value: (entry.tags || []).join(", "), autocomplete: "off" })),
       ]),
       el("div", {}, [
         el("label", { text: "Notes" }),
-        el("textarea", inputAttrs({ id: "f_notes", autocomplete: "off" }), []),
+        el("textarea", inputAttrs({ id: "f_notes", autocomplete: "off" })),
       ]),
     ]),
+    el("div", { class: "card subtle-card" }, [
+      el("h4", { text: "TOTP / 2FA" }),
+      el("div", { class: "row" }, [
+        el("div", {}, [
+          el("label", { text: "Base32 Secret" }),
+          el("input", inputAttrs({ id: "f_totpSecret", type: "text", value: entry.totpSecret || "", autocomplete: "off", placeholder: "JBSWY3DPEHPK3PXP" })),
+        ]),
+        el("div", { class: "row" }, [
+          el("div", {}, [
+            el("label", { text: "Digits" }),
+            el("input", inputAttrs({ id: "f_totpDigits", type: "number", value: entry.totpDigits || 6, min: "6", max: "8" })),
+          ]),
+          el("div", {}, [
+            el("label", { text: "Period (sec)" }),
+            el("input", inputAttrs({ id: "f_totpPeriod", type: "number", value: entry.totpPeriod || 30, min: "15", max: "90" })),
+          ]),
+        ]),
+      ]),
+      el("div", { class: "inline wrap" }, [
+        el("span", { class: `badge ${totp.valid ? "badge-ok" : "badge-warn"}`, text: totp.label }),
+        totp.code ? el("span", { class: "badge", text: `Current code: ${totp.code} (${totp.expiresIn}s)` }) : null,
+        totp.code && !isRO ? el("button", { class: "secondary small", text: "Copy Code", onclick: () => handlers.onCopyTotp(entry.id) }) : null,
+      ].filter(Boolean)),
+    ]),
+    el("div", { class: "inline wrap small muted" }, [
+      document.createTextNode(`Imported from: ${entry.importedFrom || "Manual"}`),
+      document.createTextNode(`Updated: ${timeAgo(entry.updatedAt || entry.createdAt)}`),
+    ]),
     el("div", { class: "actions" }, [
-      !isRO ? el("button", { text: "Save Entry", onclick: () => handlers.onSaveEntry(e.id) }) : null,
+      !isRO ? el("button", { text: "Save Entry", onclick: () => handlers.onSaveEntry(entry.id) }) : null,
       el("button", { class: "secondary", text: isRO ? "Close" : "Cancel", onclick: handlers.onCancelEdit }),
     ].filter(Boolean)),
-    el("div", { class: "hr" }),
-    !isRO
-      ? el("p", { class: "small", text: "Remember: changes are only stored after “Save & Download Vault JSON”." })
-      : el("p", { class: "small", text: "Read-only mode enabled." }),
   ]);
 
   host.appendChild(form);
-
   const notes = document.getElementById("f_notes");
-  if (notes) notes.value = e.notes || "";
+  if (notes) notes.value = entry.notes || "";
 
-  // History Section
-  if (e.history && e.history.length > 0) {
-    const historyCard = el("div", { style: "margin-top: 20px; padding-top: 10px; border-top: 1px solid #ccc;" }, [
+  if (entry.history?.length) {
+    host.appendChild(el("div", { class: "card subtle-card", style: "margin-top: 16px;" }, [
       el("h4", { text: "Version History" }),
-      el("ul", { class: "small", style: "list-style: none; padding: 0;" }, e.history.map((h, idx) => {
-        const dateStr = new Date(h.savedAt).toLocaleString();
-        return el("li", { style: "margin-bottom: 8px; padding: 8px; background: #eee; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;" }, [
-          el("span", { text: `${dateStr} ${h.reason ? '(' + h.reason + ')' : ''}` }),
-          !isRO ? el("button", {
-            class: "small secondary",
-            text: "Restore",
-            onclick: () => handlers.onRestoreHistory(e.id, idx)
-          }) : null
-        ]);
-      }))
-    ]);
-    form.appendChild(historyCard);
+      el("div", { class: "stack-sm" }, entry.history.slice(0, 10).map((item, index) =>
+        el("div", { class: "inline wrap history-row" }, [
+          el("span", { class: "small muted", text: `${new Date(item.savedAt).toLocaleString()}${item.reason ? ` (${item.reason})` : ""}` }),
+          !isRO ? el("button", { class: "secondary small", text: "Restore", onclick: () => handlers.onRestoreHistory(entry.id, index) }) : null,
+        ].filter(Boolean))
+      )),
+    ]));
   }
 }
 
 export function getEditorFormValues() {
-  const title = document.getElementById("f_title")?.value ?? "";
-  const url = document.getElementById("f_url")?.value ?? "";
-  const username = document.getElementById("f_username")?.value ?? "";
-  const password = document.getElementById("f_password")?.value ?? "";
-  const notes = document.getElementById("f_notes")?.value ?? "";
-  const tagsRaw = document.getElementById("f_tags")?.value ?? "";
-  const tags = tagsRaw
-    .split(",")
-    .map((t) => t.trim())
-    .filter(Boolean);
-  return { title, url, username, password, notes, tags };
+  return {
+    title: document.getElementById("f_title")?.value ?? "",
+    url: document.getElementById("f_url")?.value ?? "",
+    username: document.getElementById("f_username")?.value ?? "",
+    password: document.getElementById("f_password")?.value ?? "",
+    notes: document.getElementById("f_notes")?.value ?? "",
+    tags: (document.getElementById("f_tags")?.value ?? "")
+      .split(",")
+      .map((tag) => tag.trim())
+      .filter(Boolean),
+    totpSecret: document.getElementById("f_totpSecret")?.value ?? "",
+    totpDigits: Number(document.getElementById("f_totpDigits")?.value ?? 6) || 6,
+    totpPeriod: Number(document.getElementById("f_totpPeriod")?.value ?? 30) || 30,
+  };
 }
 
 export function getSearchValues() {
-  const q = document.getElementById("searchQuery")?.value ?? "";
-  const tag = document.getElementById("searchTag")?.value ?? "";
-  return { q: q.trim(), tag: tag.trim() };
+  return {
+    q: (document.getElementById("searchQuery")?.value ?? "").trim(),
+    tag: (document.getElementById("searchTag")?.value ?? "").trim(),
+  };
 }
 
 export function renderQRModal(chunks, index, total, handlers) {
-  // Use existing overlay or create one
   let overlay = document.getElementById("qr-overlay");
   if (!overlay) {
-    overlay = el("div", { id: "qr-overlay", style: "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:9999;display:flex;align-items:center;justify-content:center;" });
+    overlay = el("div", { id: "qr-overlay", style: "position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;" });
     document.body.appendChild(overlay);
   }
   overlay.innerHTML = "";
-
   const chunkData = chunks[index];
-
-  // Generate QR
   let qrHtml = "";
   try {
     if (window.qrcode) {
-      const typeNumber = 0; // Auto detection
-      const errorCorrectionLevel = 'L';
-      const qr = window.qrcode(typeNumber, errorCorrectionLevel);
+      const qr = window.qrcode(0, "L");
       qr.addData(chunkData);
       qr.make();
-      qrHtml = qr.createImgTag(5, 10); // cell size, margin
+      qrHtml = qr.createImgTag(5, 8);
     } else {
-      qrHtml = "<p>QR Library not found. Check src/qrcode.js</p>";
+      qrHtml = "<p>QR library not available.</p>";
     }
-  } catch (e) {
-    qrHtml = `<p class='error'>Error: ${e.message}</p>`;
+  } catch (error) {
+    qrHtml = `<p class="error">${error.message}</p>`;
   }
 
-  const card = el("div", { class: "card", style: "max-width: 500px; text-align: center; background: white; color: black;" }, [
+  const card = el("div", { class: "card", style: "max-width: 520px; text-align:center; background:#fff; color:#111;" }, [
     el("h2", { text: `Mobile Transfer (${index + 1}/${total})` }),
-    el("p", { text: "Scan this code with the ZeroVault mobile app (or text scanner)." }),
-    el("div", { style: "margin: 20px 0;" }, []), // placeholder for QR
-    el("div", { class: "actions", style: "justify-content: center;" }, [
-      el("button", { class: "secondary", text: "Previous", onclick: handlers.onPrevQR, disabled: index === 0 ? "true" : undefined }),
+    el("p", { text: "Scan each code in order on another ZeroVault-compatible device." }),
+    el("div", { html: qrHtml, style: "margin: 20px 0;" }),
+    el("div", { class: "actions centered" }, [
+      el("button", { class: "secondary", text: "Previous", onclick: handlers.onPrevQR, disabled: index === 0 }),
       el("button", { text: index === total - 1 ? "Finish" : "Next", onclick: handlers.onNextQR }),
       el("button", { class: "secondary", text: "Close", onclick: handlers.onCloseQR }),
     ]),
-    el("p", { class: "small", text: `Chunk Size: ${chunkData.length} chars` })
+    el("p", { class: "small", text: `Chunk size: ${chunkData.length} characters` }),
   ]);
-
-  // Inject HTML string for QR image
-  card.children[2].innerHTML = qrHtml;
-
   overlay.appendChild(card);
 }
 
 export function closeQRModal() {
-  const overlay = document.getElementById("qr-overlay");
-  if (overlay) overlay.remove();
+  document.getElementById("qr-overlay")?.remove();
 }

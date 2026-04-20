@@ -1,146 +1,259 @@
-import { state, setUnlocked, wipeSensitive, resetInactivityTimer, isUnlocked } from "./state.js";
+import { state, setUnlocked, wipeSensitive, resetInactivityTimer, isUnlocked, markDirty, markSaved, syncSettingsFromVault } from "./state.js";
 import { render, renderEditor, getEditorFormValues, getSearchValues, renderQRModal, closeQRModal } from "./ui.js";
-import { getDomainColor, getInitials, timeAgo } from "./helpers.js";
+import { auditVault, generatePassword, passwordStrengthHint } from "./features/passwords.js";
+import { importEntriesFromFile } from "./features/importers.js";
+import { generateTotpCode, isValidTotpSecret, secretFromText } from "./features/totp.js";
+import { getArgon2Support } from "./features/kdf.js";
 import {
   newEmptyVaultPayload,
   createEncryptedVaultFile,
   openEncryptedVaultFile,
   reencryptVaultToFile,
   downloadJson,
-  readJsonFile
+  readJsonFile,
+  buildTimestampedFilename,
 } from "./vault.js";
 
 const appRoot = document.getElementById("app");
 const lockBtn = document.getElementById("lockBtn");
 
-// In-memory only; user must re-enter master password to save (by design).
 let selectedEntryId = null;
 let visibleFilter = { q: "", tag: "", favoritesOnly: false, showArchived: false };
 let visiblePasswords = new Set();
 let deletingEntryIds = new Set();
 let qrState = { chunks: [], index: 0 };
-let keyboardNavIndex = -1; // -1 means no selection specific for keyboard
-
-// Minimal UX routing: locked screens
-let mode = "home"; // home | create | open
-let transient = {
-  fileObj: null,
-  fileName: "vault.json",
-};
+let keyboardNavIndex = -1;
+let mode = "home";
+let totpIntervalId = null;
+let totpCache = new Map();
 
 function updateLockButton() {
   lockBtn.disabled = !isUnlocked();
 }
 
-function lockNow() {
+function getSecuritySettings() {
+  return state.vaultData?.settings?.security || {
+    inactivityMs: 2 * 60 * 1000,
+    clipboardClearMs: 20000,
+    preferredKdf: "PBKDF2",
+    lockOnHide: false,
+  };
+}
+
+function setSecuritySettings(nextSecurity) {
+  if (!state.vaultData) return;
+  state.vaultData.settings = state.vaultData.settings || {};
+  state.vaultData.settings.security = {
+    ...getSecuritySettings(),
+    ...nextSecurity,
+  };
+  syncSettingsFromVault();
+  state.upgradeAvailable = state.vaultMeta?.crypto?.kdf !== state.vaultData.settings.security.preferredKdf;
+}
+
+function armInactivity() {
+  if (!isUnlocked()) return;
+  resetInactivityTimer(() => lockNow("Vault locked by inactivity."));
+}
+
+function startTotpTicker() {
+  if (totpIntervalId) clearInterval(totpIntervalId);
+  totpIntervalId = setInterval(() => {
+    refreshTotpCache();
+  }, 1000);
+}
+
+function stopTotpTicker() {
+  if (totpIntervalId) {
+    clearInterval(totpIntervalId);
+    totpIntervalId = null;
+  }
+}
+
+function rerender() {
+  render(appRoot, handlers);
+  renderEditor(selectedEntryId ? getEntryById(selectedEntryId) : null, handlers);
+  updateLockButton();
+}
+
+function lockNow(message = "") {
   selectedEntryId = null;
   keyboardNavIndex = -1;
   visibleFilter = { q: "", tag: "", favoritesOnly: false, showArchived: false };
   visiblePasswords.clear();
   deletingEntryIds.clear();
   qrState = { chunks: [], index: 0 };
+  totpCache.clear();
   closeQRModal();
+  stopTotpTicker();
   wipeSensitive();
   mode = "home";
-  transient = { fileObj: null, fileName: "vault.json" };
-  updateLockButton();
-  render(appRoot, handlers);
+  rerender();
+  if (message) toast(message);
 }
 
-lockBtn.addEventListener("click", () => lockNow());
-
-// Auto-lock on inactivity (only when unlocked)
-function armInactivity() {
-  if (!isUnlocked()) return;
-  resetInactivityTimer(() => lockNow());
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  }[char]));
 }
 
-["mousemove", "keydown", "mousedown", "touchstart"].forEach((ev) => {
-  window.addEventListener(
-    ev,
-    () => {
-      if (isUnlocked()) armInactivity();
-    },
-    { passive: true }
-  );
-});
+function toast(message, isError = false) {
+  const existing = document.getElementById("toast");
+  if (existing) existing.remove();
 
-// Keyboard Navigation Listener
-document.addEventListener("keydown", (e) => {
-  if (!isUnlocked() || state.readOnly) return;
-  // If editing an input, ignore navigation
-  if (["INPUT", "TEXTAREA"].includes(document.activeElement.tagName)) return;
+  const node = document.createElement("div");
+  node.id = "toast";
+  node.className = "card";
+  node.style.position = "fixed";
+  node.style.right = "18px";
+  node.style.bottom = "18px";
+  node.style.maxWidth = "420px";
+  node.style.zIndex = 9999;
+  node.innerHTML = `<div class="${isError ? "error" : "ok"}">${escapeHtml(message)}</div><div class="small muted">This message disappears automatically.</div>`;
+  document.body.appendChild(node);
+  setTimeout(() => node.remove(), 3200);
+}
 
-  const entries = handlers.getVisibleEntries();
-  if (entries.length === 0) return;
-
-  if (e.key === "ArrowDown") {
-    e.preventDefault();
-    keyboardNavIndex = Math.min(keyboardNavIndex + 1, entries.length - 1);
-    render(appRoot, handlers);
-  } else if (e.key === "ArrowUp") {
-    e.preventDefault();
-    keyboardNavIndex = Math.max(keyboardNavIndex - 1, 0);
-    render(appRoot, handlers);
-  } else if (e.key === "Enter") {
-    e.preventDefault();
-    if (keyboardNavIndex >= 0 && entries[keyboardNavIndex]) {
-      handlers.onEditEntry(entries[keyboardNavIndex].id);
-    }
-  } else if (e.key.toLowerCase() === "c") {
-    if (keyboardNavIndex >= 0 && entries[keyboardNavIndex]) {
-      handlers.onCopyPassword(entries[keyboardNavIndex].id);
-    }
-  } else if (e.key.toLowerCase() === "e") {
-    if (keyboardNavIndex >= 0 && entries[keyboardNavIndex]) {
-      handlers.onEditEntry(entries[keyboardNavIndex].id);
-    }
-  } else if (e.key === "Delete") {
-    if (keyboardNavIndex >= 0 && entries[keyboardNavIndex]) {
-      handlers.onArchiveEntry(entries[keyboardNavIndex].id);
-    }
-  }
-});
-
-document.addEventListener("visibilitychange", () => {
-  // Relaxed behavior: rely on the standard inactivity timer (e.g. 2 mins)
-  // instead of locking immediately when the tab is hidden.
-  if (!document.hidden && isUnlocked()) {
-    armInactivity();
-  }
-});
+function cloneSnapshot(entry) {
+  return {
+    title: entry.title,
+    url: entry.url,
+    username: entry.username,
+    password: entry.password,
+    notes: entry.notes,
+    tags: [...(entry.tags || [])],
+    totpSecret: entry.totpSecret || "",
+    totpDigits: entry.totpDigits || 6,
+    totpPeriod: entry.totpPeriod || 30,
+  };
+}
 
 function getEntryById(id) {
-  const v = state.vaultData;
-  if (!v) return null;
-  return (v.entries || []).find((x) => x.id === id) || null;
+  return state.vaultData?.entries?.find((entry) => entry.id === id) || null;
 }
 
-// ... render functions (create, open, etc) remain mostly same ...
-// For brevity, assuming renderCreateScreen, renderOpenScreen, etc are here or imported if I was refactoring fully, 
-// but since I'm patching app.js, I will keep the large blocks below unmodified in the replacement unless necessary.
-// Actually, to avoid errors with replacing huge blocks, I will target specific handler section.
-// Wait, I need to replace the whole file imports anyway to add helpers.
+function normalizeImportedEntry(entry) {
+  const now = new Date().toISOString();
+  return {
+    id: crypto.randomUUID(),
+    title: entry.title || "",
+    url: entry.url || "",
+    username: entry.username || "",
+    password: entry.password || "",
+    notes: entry.notes || "",
+    tags: Array.isArray(entry.tags) ? entry.tags : [],
+    totpSecret: secretFromText(entry.totpSecret || ""),
+    totpDigits: entry.totpDigits || 6,
+    totpPeriod: entry.totpPeriod || 30,
+    history: [],
+    isFavorite: false,
+    archived: false,
+    importedFrom: entry.importedFrom || "Import",
+    createdAt: now,
+    updatedAt: now,
+    lastPasswordChangeAt: now,
+  };
+}
 
-// ... (Create/Open functions skipped in detail here but assumed present in file) ...
+function createNewEntry() {
+  return normalizeImportedEntry({ importedFrom: "Manual" });
+}
 
-// Let's scroll down to handlers definition to begin my surgical replacement if possible. 
-// But since I changed imports, I have to provide the top of the file. 
+function getVisibleEntries() {
+  const entries = [...(state.vaultData?.entries || [])];
+  const { q, tag, favoritesOnly, showArchived } = visibleFilter;
+  let out = showArchived ? entries.filter((entry) => entry.archived) : entries.filter((entry) => !entry.archived);
+  if (favoritesOnly) out = out.filter((entry) => entry.isFavorite);
+  if (q) {
+    const needle = q.toLowerCase();
+    out = out.filter((entry) => [entry.title, entry.url, entry.username, entry.notes, ...(entry.tags || [])].join(" ").toLowerCase().includes(needle));
+  }
+  if (tag) {
+    const needle = tag.toLowerCase();
+    out = out.filter((entry) => (entry.tags || []).some((item) => item.toLowerCase() === needle));
+  }
+  out.sort((a, b) => {
+    if (!!a.isFavorite !== !!b.isFavorite) return a.isFavorite ? -1 : 1;
+    return new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0);
+  });
+  return out;
+}
 
-// I will assume the file starts with imports and ends with handlers.
-// Since I can't see the middle "render" functions in my mental diff easily without reading them all,
-// I'll stick to replacing the HANDLERS and the IMPORTS/STATE section. 
+function getAudit() {
+  return auditVault(state.vaultData?.entries || []);
+}
 
-// Let's do imports and state variables first.
-// Then I will do a separate one for Handlers.
+function getAuditById(id) {
+  return getAudit().items.find((item) => item.id === id) || { issues: [], score: 0 };
+}
 
-/* ... */
+function summarizeChanges() {
+  const changeLog = state.changeLog || {};
+  return [
+    changeLog.added ? `${changeLog.added} new` : "",
+    changeLog.edited ? `${changeLog.edited} edited` : "",
+    changeLog.deleted ? `${changeLog.deleted} deleted` : "",
+    changeLog.archived ? `${changeLog.archived} archived` : "",
+    changeLog.imported ? `${changeLog.imported} imported` : "",
+  ].filter(Boolean).join(", ");
+}
 
+async function copyWithAutoClear(value, label) {
+  if (state.readOnly) return toast("Clipboard disabled in Emergency Read-Only Mode.", true);
+  try {
+    await navigator.clipboard.writeText(value || "");
+    toast(`${label} copied to clipboard.`);
+    const clearMs = getSecuritySettings().clipboardClearMs || 20000;
+    setTimeout(async () => {
+      try {
+        const current = await navigator.clipboard.readText();
+        if (current === value) await navigator.clipboard.writeText("");
+      } catch {
+        // Best-effort clear only.
+      }
+    }, clearMs);
+  } catch {
+    toast("Clipboard copy failed.", true);
+  }
+}
 
+async function getEntryTotp(entry) {
+  if (!entry?.totpSecret) return { valid: false, label: "No TOTP secret set", code: "", expiresIn: 0 };
+  if (!isValidTotpSecret(entry.totpSecret)) return { valid: false, label: "Invalid TOTP secret", code: "", expiresIn: 0 };
+  try {
+    const data = await generateTotpCode(entry.totpSecret, {
+      digits: entry.totpDigits || 6,
+      period: entry.totpPeriod || 30,
+    });
+    return { valid: true, label: "TOTP ready", ...data };
+  } catch (error) {
+    return { valid: false, label: error.message, code: "", expiresIn: 0 };
+  }
+}
+
+async function refreshTotpCache() {
+  const entries = state.vaultData?.entries || [];
+  const nextCache = new Map();
+  await Promise.all(entries.map(async (entry) => {
+    if (!entry.totpSecret) return;
+    nextCache.set(entry.id, await getEntryTotp(entry));
+  }));
+  totpCache = nextCache;
+}
+
+function updateVaultTimestamp() {
+  if (state.vaultData) state.vaultData.updatedAt = new Date().toISOString();
+}
 
 function renderCreateScreen() {
   const wrap = document.createElement("div");
   wrap.className = "card";
+  const argon2 = getArgon2Support();
   wrap.innerHTML = `
     <h2>Create New Vault</h2>
     <div class="row">
@@ -149,7 +262,7 @@ function renderCreateScreen() {
         <input id="cv_name" type="text" autocomplete="off" placeholder="My Vault" />
       </div>
       <div>
-        <label>File name (download)</label>
+        <label>File name</label>
         <input id="cv_filename" type="text" autocomplete="off" value="vault.json" />
       </div>
     </div>
@@ -164,57 +277,67 @@ function renderCreateScreen() {
         <input id="cv_pw2" type="password" autocomplete="new-password" />
       </div>
     </div>
+    <div class="row">
+      <div>
+        <label>Preferred KDF</label>
+        <select id="cv_kdf">
+          <option value="PBKDF2">PBKDF2</option>
+          <option value="Argon2id" ${argon2.available ? "" : "disabled"}>Argon2id ${argon2.available ? "" : "(adapter missing)"}</option>
+        </select>
+      </div>
+      <div>
+        <label>Auto-lock timeout</label>
+        <select id="cv_timeout">
+          <option value="60000">1 minute</option>
+          <option value="120000" selected>2 minutes</option>
+          <option value="300000">5 minutes</option>
+          <option value="900000">15 minutes</option>
+        </select>
+      </div>
+    </div>
     <div class="actions">
-      <button id="cv_create">Create & Download Encrypted Vault</button>
+      <button id="cv_create">Create & Download Vault</button>
       <button class="secondary" id="cv_back">Back</button>
     </div>
-    <p class="small">
-      Your master password is never stored. If you forget it, the vault cannot be recovered.
-    </p>
-    <p class="small">
-      No data is stored in the browser. Save the file to Drive/Dropbox/iCloud to prevent loss and sync devices.
-    </p>
+    <p class="small muted">Argon2id migration is supported when a runtime adapter is available. This build does not bundle one by default.</p>
   `;
 
   wrap.querySelector("#cv_back").addEventListener("click", () => {
     mode = "home";
-    render(appRoot, handlers);
+    rerender();
   });
-
   const pw = wrap.querySelector("#cv_pw");
   const pw2 = wrap.querySelector("#cv_pw2");
   const strength = wrap.querySelector("#pw_strength");
-
   pw.addEventListener("input", () => {
     strength.textContent = passwordStrengthHint(pw.value);
-    strength.className = "small " + (pw.value.length >= 12 ? "ok" : "");
+    strength.className = `small ${pw.value.length >= 12 ? "ok" : "muted"}`;
   });
-
   wrap.querySelector("#cv_create").addEventListener("click", async () => {
     const name = wrap.querySelector("#cv_name").value.trim() || "My Vault";
     const filename = wrap.querySelector("#cv_filename").value.trim() || "vault.json";
-    const p1 = pw.value;
-    const p2 = pw2.value;
-
-    if (!p1 || p1.length < 8) return toast("Use a longer master password (8+).", true);
-    if (p1 !== p2) return toast("Passwords do not match.", true);
+    const preferredKdf = wrap.querySelector("#cv_kdf").value;
+    const inactivityMs = Number(wrap.querySelector("#cv_timeout").value) || 120000;
+    if (!pw.value || pw.value.length < 8) return toast("Use a master password with at least 8 characters.", true);
+    if (pw.value !== pw2.value) return toast("Passwords do not match.", true);
 
     const payload = newEmptyVaultPayload(name);
+    payload.settings.security.preferredKdf = preferredKdf;
+    payload.settings.security.inactivityMs = inactivityMs;
 
     try {
-      const fileJson = await createEncryptedVaultFile(payload, p1);
+      const fileJson = await createEncryptedVaultFile(payload, pw.value, { kdf: preferredKdf });
       downloadJson(fileJson, filename);
-      toast("Downloaded new encrypted vault JSON.");
+      toast("Downloaded new encrypted vault.");
       mode = "home";
-      render(appRoot, handlers);
-    } catch (e) {
-      toast(e?.message || "Failed to create vault.", true);
+      rerender();
+    } catch (error) {
+      toast(error.message || "Failed to create vault.", true);
     } finally {
       pw.value = "";
       pw2.value = "";
     }
   });
-
   return wrap;
 }
 
@@ -225,102 +348,55 @@ function renderOpenScreen() {
     <h2>Open Existing Vault</h2>
     <div class="row">
       <div>
-        <label>Upload encrypted vault JSON</label>
+        <label>Encrypted vault JSON</label>
         <input id="ov_file" type="file" accept="application/json" />
       </div>
-    <div class="row">
       <div>
         <label>Master Password</label>
         <input id="ov_pw" type="password" autocomplete="current-password" />
       </div>
     </div>
-    <div class="row" style="margin-top: 10px; align-items: center; justify-content: flex-start; gap: 8px;">
-      <input type="checkbox" id="ov_readonly" style="width: auto;" />
-      <label for="ov_readonly" style="display:inline; cursor:pointer; margin:0;">Open in Emergency Read-Only Mode</label>
+    <div class="inline wrap" style="margin-top:12px;">
+      <label class="inline" style="gap:8px;">
+        <input id="ov_readonly" type="checkbox" style="width:auto;" />
+        <span>Open in Emergency Read-Only Mode</span>
+      </label>
     </div>
     <div class="actions">
       <button id="ov_open">Open Vault</button>
       <button class="secondary" id="ov_back">Back</button>
     </div>
-    <p class="small">
-      Decrypted data stays only in memory. Locking or refreshing clears it.
-    </p>
+    <p class="small muted">Decrypted data stays only in memory. Refreshing or locking clears it.</p>
   `;
 
   wrap.querySelector("#ov_back").addEventListener("click", () => {
     mode = "home";
-    render(appRoot, handlers);
+    rerender();
   });
-
   wrap.querySelector("#ov_open").addEventListener("click", async () => {
-    const fileInput = wrap.querySelector("#ov_file");
-    const pw = wrap.querySelector("#ov_pw").value;
-
-    const file = fileInput.files?.[0];
+    const file = wrap.querySelector("#ov_file").files?.[0];
+    const password = wrap.querySelector("#ov_pw").value;
     if (!file) return toast("Choose a vault JSON file.", true);
-    if (!pw) return toast("Enter master password.", true);
-
+    if (!password) return toast("Enter the master password.", true);
     try {
       const obj = await readJsonFile(file);
-      const { meta, data } = await openEncryptedVaultFile(obj, pw);
-
-      const isReadOnly = wrap.querySelector("#ov_readonly").checked;
+      const { meta, data } = await openEncryptedVaultFile(obj, password);
       state.fileNameHint = file.name || "vault.json";
       setUnlocked(meta, data);
-      state.readOnly = isReadOnly;
-
-      updateLockButton();
-      render(appRoot, handlers);
-      renderEditor(null, handlers);
+      state.readOnly = wrap.querySelector("#ov_readonly").checked;
+      state.upgradeAvailable = meta.crypto.kdf !== getSecuritySettings().preferredKdf;
+      await refreshTotpCache();
+      mode = "home";
+      rerender();
+      startTotpTicker();
       armInactivity();
-    } catch (e) {
-      toast(e?.message || "Failed to open vault.", true);
+    } catch (error) {
+      toast(error.message || "Failed to open vault.", true);
     } finally {
       wrap.querySelector("#ov_pw").value = "";
     }
   });
-
   return wrap;
-}
-
-function toast(msg, isError = false) {
-  const existing = document.getElementById("toast");
-  if (existing) existing.remove();
-
-  const n = document.createElement("div");
-  n.id = "toast";
-  n.className = "card";
-  n.style.position = "fixed";
-  n.style.right = "18px";
-  n.style.bottom = "18px";
-  n.style.maxWidth = "420px";
-  n.style.zIndex = 9999;
-  n.innerHTML = `<div class="${isError ? "error" : "ok"}">${escapeHtml(msg)}</div>
-                 <div class="small">This message disappears automatically.</div>`;
-  document.body.appendChild(n);
-
-  setTimeout(() => n.remove(), 3000);
-}
-
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
-  }[c]));
-}
-
-function passwordStrengthHint(pw) {
-  const len = pw.length;
-  const hasLower = /[a-z]/.test(pw);
-  const hasUpper = /[A-Z]/.test(pw);
-  const hasNum = /\d/.test(pw);
-  const hasSym = /[^a-zA-Z0-9]/.test(pw);
-  const score = [hasLower, hasUpper, hasNum, hasSym].filter(Boolean).length + (len >= 12 ? 1 : 0);
-
-  if (len === 0) return "";
-  if (len < 8) return "Weak: too short.";
-  if (score <= 2) return "Okay: add symbols/uppercase/length.";
-  if (score <= 4) return "Good: consider 14+ chars.";
-  return "Strong.";
 }
 
 function renderChangePasswordScreen() {
@@ -335,7 +411,7 @@ function renderChangePasswordScreen() {
         <div class="small" id="cp_strength"></div>
       </div>
       <div>
-        <label>Confirm New Password</label>
+        <label>Confirm New Master Password</label>
         <input id="cp_pw2" type="password" autocomplete="new-password" />
       </div>
     </div>
@@ -343,518 +419,515 @@ function renderChangePasswordScreen() {
       <button id="cp_save">Change & Download Vault</button>
       <button class="secondary" id="cp_back">Cancel</button>
     </div>
-    <p class="small">
-      This will re-encrypt your <b>entire vault</b> with the new password and download it as a new file.
-      <br>
-      Please delete the old file after verifying the new one works.
-    </p>
+    <p class="small muted">This re-encrypts the entire vault and downloads a new file. Keep the previous file until you verify the new one opens.</p>
   `;
-
   wrap.querySelector("#cp_back").addEventListener("click", () => {
     mode = "home";
-    render(appRoot, handlers);
+    rerender();
   });
-
   const pw = wrap.querySelector("#cp_pw");
   const pw2 = wrap.querySelector("#cp_pw2");
   const strength = wrap.querySelector("#cp_strength");
-
   pw.addEventListener("input", () => {
     strength.textContent = passwordStrengthHint(pw.value);
-    strength.className = "small " + (pw.value.length >= 12 ? "ok" : "");
+    strength.className = `small ${pw.value.length >= 12 ? "ok" : "muted"}`;
   });
-
   wrap.querySelector("#cp_save").addEventListener("click", async () => {
-    const p1 = pw.value;
-    const p2 = pw2.value;
-
-    if (!p1 || p1.length < 8) return toast("Use a longer password (8+).", true);
-    if (p1 !== p2) return toast("Passwords do not match.", true);
-
-    if (state.readOnly) return toast("Cannot change password in Read-Only mode.", true);
-    if (!state.vaultData) return;
-
-    state.vaultData.updatedAt = new Date().toISOString();
-
+    if (!pw.value || pw.value.length < 8) return toast("Use a stronger password.", true);
+    if (pw.value !== pw2.value) return toast("Passwords do not match.", true);
     try {
-      // Re-encrypt with NEW password
-      const fileJson = await reencryptVaultToFile(state.vaultData, p1, state.vaultMeta);
-      await downloadJson(fileJson, state.fileNameHint || "vault.json");
-      toast("Downloaded vault with NEW password.");
-
+      updateVaultTimestamp();
+      const fileJson = await reencryptVaultToFile(state.vaultData, pw.value, state.vaultMeta, {
+        kdf: getSecuritySettings().preferredKdf,
+      });
+      const filename = buildTimestampedFilename(state.fileNameHint || "vault.json");
+      downloadJson(fileJson, filename);
+      markSaved(filename);
+      toast("Downloaded vault with the new master password.");
       mode = "home";
-      render(appRoot, handlers);
-    } catch (e) {
-      toast(e?.message || "Failed to change password.", true);
+      rerender();
+    } catch (error) {
+      toast(error.message || "Failed to change password.", true);
     }
   });
-
   return wrap;
 }
 
-/** ✅ handlers must be defined BEFORE first render */
+function renderImportScreen() {
+  const wrap = document.createElement("div");
+  wrap.className = "card";
+  wrap.innerHTML = `
+    <h2>Import Entries</h2>
+    <p class="small muted">Supported now: generic CSV exports and Bitwarden JSON exports.</p>
+    <div class="row">
+      <div>
+        <label>Import file</label>
+        <input id="iv_file" type="file" accept=".csv,.json" />
+      </div>
+    </div>
+    <div class="actions">
+      <button id="iv_import">Import Into Current Vault</button>
+      <button class="secondary" id="iv_back">Back</button>
+    </div>
+  `;
+  wrap.querySelector("#iv_back").addEventListener("click", () => {
+    mode = "home";
+    rerender();
+  });
+  wrap.querySelector("#iv_import").addEventListener("click", async () => {
+    const file = wrap.querySelector("#iv_file").files?.[0];
+    if (!file) return toast("Choose an import file.", true);
+    try {
+      const imported = await importEntriesFromFile(file);
+      const entries = imported.map(normalizeImportedEntry);
+      state.vaultData.entries.unshift(...entries);
+      updateVaultTimestamp();
+      markDirty("imported", entries.length);
+      await refreshTotpCache();
+      toast(`Imported ${entries.length} entries.`);
+      mode = "home";
+      rerender();
+    } catch (error) {
+      toast(error.message || "Import failed.", true);
+    }
+  });
+  return wrap;
+}
+
+function renderSecurityScreen() {
+  const wrap = document.createElement("div");
+  wrap.className = "card";
+  const security = getSecuritySettings();
+  const argon2 = getArgon2Support();
+  wrap.innerHTML = `
+    <h2>Security Settings</h2>
+    <div class="row">
+      <div>
+        <label>Auto-lock timeout (minutes)</label>
+        <input id="sv_timeout" type="number" min="1" max="120" value="${Math.round((security.inactivityMs || 120000) / 60000)}" />
+      </div>
+      <div>
+        <label>Clipboard clear delay (seconds)</label>
+        <input id="sv_clipboard" type="number" min="5" max="120" value="${Math.round((security.clipboardClearMs || 20000) / 1000)}" />
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>Preferred KDF for next save</label>
+        <select id="sv_kdf">
+          <option value="PBKDF2" ${security.preferredKdf === "PBKDF2" ? "selected" : ""}>PBKDF2</option>
+          <option value="Argon2id" ${(security.preferredKdf === "Argon2id") ? "selected" : ""} ${argon2.available ? "" : "disabled"}>Argon2id ${argon2.available ? "" : "(adapter missing)"}</option>
+        </select>
+      </div>
+      <div class="inline wrap" style="align-items:end;">
+        <label class="inline" style="gap:8px; margin:0 0 10px 0;">
+          <input id="sv_hide" type="checkbox" style="width:auto;" ${security.lockOnHide ? "checked" : ""} />
+          <span>Lock immediately when tab is hidden</span>
+        </label>
+      </div>
+    </div>
+    <div class="actions">
+      <button id="sv_save">Save Settings</button>
+      <button class="secondary" id="sv_back">Back</button>
+    </div>
+    <p class="small muted">Current vault crypto: ${state.vaultMeta?.crypto?.kdf || "PBKDF2"}. If preferred KDF differs, the next download will migrate the vault.</p>
+  `;
+  wrap.querySelector("#sv_back").addEventListener("click", () => {
+    mode = "home";
+    rerender();
+  });
+  wrap.querySelector("#sv_save").addEventListener("click", () => {
+    const minutes = Math.max(1, Number(wrap.querySelector("#sv_timeout").value) || 2);
+    const seconds = Math.max(5, Number(wrap.querySelector("#sv_clipboard").value) || 20);
+    const preferredKdf = wrap.querySelector("#sv_kdf").value;
+    setSecuritySettings({
+      inactivityMs: minutes * 60000,
+      clipboardClearMs: seconds * 1000,
+      preferredKdf,
+      lockOnHide: wrap.querySelector("#sv_hide").checked,
+    });
+    markDirty("edited");
+    toast("Security settings updated. Download the vault to persist them.");
+    mode = "home";
+    rerender();
+    armInactivity();
+  });
+  return wrap;
+}
+
+function showModeScreen() {
+  appRoot.innerHTML = "";
+  const screen = mode === "create"
+    ? renderCreateScreen()
+    : mode === "open"
+      ? renderOpenScreen()
+      : mode === "change-password"
+        ? renderChangePasswordScreen()
+        : mode === "import"
+          ? renderImportScreen()
+          : mode === "security"
+            ? renderSecurityScreen()
+            : null;
+  if (screen) {
+    appRoot.appendChild(screen);
+  } else {
+    rerender();
+  }
+}
+
+lockBtn.addEventListener("click", () => lockNow("Vault locked."));
+
+["mousemove", "keydown", "mousedown", "touchstart"].forEach((eventName) => {
+  window.addEventListener(eventName, () => {
+    if (isUnlocked()) armInactivity();
+  }, { passive: true });
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (!isUnlocked()) return;
+  if (document.hidden && getSecuritySettings().lockOnHide) {
+    lockNow("Vault locked because the tab was hidden.");
+  } else if (!document.hidden) {
+    armInactivity();
+  }
+});
+
+window.addEventListener("beforeunload", (event) => {
+  if (!state.hasUnsavedChanges) return;
+  event.preventDefault();
+  event.returnValue = "";
+});
+
+document.addEventListener("keydown", (event) => {
+  if (!isUnlocked() || state.readOnly) return;
+  if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
+  const entries = getVisibleEntries();
+  if (!entries.length) return;
+  if (event.key === "ArrowDown") {
+    event.preventDefault();
+    keyboardNavIndex = Math.min(keyboardNavIndex + 1, entries.length - 1);
+    selectedEntryId = entries[keyboardNavIndex]?.id || selectedEntryId;
+    rerender();
+  } else if (event.key === "ArrowUp") {
+    event.preventDefault();
+    keyboardNavIndex = Math.max(keyboardNavIndex - 1, 0);
+    selectedEntryId = entries[keyboardNavIndex]?.id || selectedEntryId;
+    rerender();
+  } else if (event.key === "Enter" && keyboardNavIndex >= 0) {
+    event.preventDefault();
+    handlers.onEditEntry(entries[keyboardNavIndex].id);
+  }
+});
+
 const handlers = {
   onGoCreate: () => {
     mode = "create";
-    appRoot.innerHTML = "";
-    appRoot.appendChild(renderCreateScreen());
+    showModeScreen();
   },
   onGoOpen: () => {
     mode = "open";
-    appRoot.innerHTML = "";
-    appRoot.appendChild(renderOpenScreen());
+    showModeScreen();
+  },
+  onGoImport: () => {
+    mode = "import";
+    showModeScreen();
+  },
+  onGoSecurity: () => {
+    mode = "security";
+    showModeScreen();
   },
   onGoChangePassword: () => {
-    if (state.readOnly) return toast("Disabled in Read-Only Mode", true);
+    if (state.readOnly) return toast("Disabled in Read-Only Mode.", true);
     mode = "change-password";
-    appRoot.innerHTML = "";
-    appRoot.appendChild(renderChangePasswordScreen());
+    showModeScreen();
   },
-
   onGoQR: async () => {
-    if (state.readOnly) return toast("Disabled in Read-Only Mode", true);
-    if (!state.vaultData) return;
-
-    // Warn if qrcode lib missing
-    if (!window.qrcode) {
-      toast("QRCode library not loaded. Check connection or src/qrcode.js", true);
-      return;
-    }
-
-    const master = prompt("Enter master password to generate transfer QRs:");
+    if (state.readOnly) return toast("Disabled in Read-Only Mode.", true);
+    if (!window.qrcode) return toast("QR library is not loaded.", true);
+    const master = prompt("Enter master password to generate transfer QR codes:");
     if (!master) return;
-
     try {
-      const fileJson = await reencryptVaultToFile(state.vaultData, master, state.vaultMeta);
-      const jsonStr = JSON.stringify(fileJson);
-
-      // Chunk it
+      const fileJson = await reencryptVaultToFile(state.vaultData, master, state.vaultMeta, { kdf: getSecuritySettings().preferredKdf });
+      const json = JSON.stringify(fileJson);
       const chunkSize = 800;
-      const totalLen = jsonStr.length;
       const chunks = [];
-      const totalChunks = Math.ceil(totalLen / chunkSize);
-
-      for (let i = 0; i < totalChunks; i++) {
-        const chunk = jsonStr.slice(i * chunkSize, (i + 1) * chunkSize);
-        // Format: ZV1:index/total:data  (index is 1-based)
-        chunks.push(`ZV1:${i + 1}/${totalChunks}:${chunk}`);
+      for (let i = 0; i < json.length; i += chunkSize) {
+        chunks.push(`ZV2:${Math.floor(i / chunkSize) + 1}/${Math.ceil(json.length / chunkSize)}:${json.slice(i, i + chunkSize)}`);
       }
-
       qrState = { chunks, index: 0 };
-      renderQRModal(qrState.chunks, qrState.index, qrState.chunks.length, handlers);
+      renderQRModal(chunks, 0, chunks.length, handlers);
       armInactivity();
-    } catch (e) {
-      toast("Failed to encrypt for QR: " + e.message, true);
+    } catch (error) {
+      toast(error.message || "QR generation failed.", true);
     }
   },
-
   onNextQR: () => {
     if (qrState.index < qrState.chunks.length - 1) {
-      qrState.index++;
+      qrState.index += 1;
       renderQRModal(qrState.chunks, qrState.index, qrState.chunks.length, handlers);
-      armInactivity();
     } else {
       closeQRModal();
       toast("Transfer finished.");
     }
   },
-
   onPrevQR: () => {
     if (qrState.index > 0) {
-      qrState.index--;
+      qrState.index -= 1;
       renderQRModal(qrState.chunks, qrState.index, qrState.chunks.length, handlers);
-      armInactivity();
     }
   },
-
   onCloseQR: () => {
     qrState = { chunks: [], index: 0 };
     closeQRModal();
-    armInactivity();
   },
-
   onSwitchReadOnly: () => {
     state.readOnly = true;
-    render(appRoot, handlers);
-    renderEditor(selectedEntryId ? getEntryById(selectedEntryId) : null, handlers);
+    rerender();
     toast("Switched to Emergency Read-Only Mode.");
   },
-
   onAddEntry: () => {
-    if (state.readOnly) return toast("Action disabled in Emergency Read-Only Mode", true);
-    const v = state.vaultData;
-    if (!v) return;
-    const now = new Date().toISOString();
-    const id = crypto.randomUUID();
-    v.entries.unshift({
-      id,
-      title: "",
-      url: "",
-      username: "",
-      password: "",
-      notes: "",
-      tags: [],
-      createdAt: now,
-      updatedAt: now,
-    });
-    if (state.changeLog) state.changeLog.added++;
-    selectedEntryId = id;
-    render(appRoot, handlers);
-    renderEditor(getEntryById(id), handlers);
-    armInactivity();
+    if (state.readOnly) return toast("Action disabled in Emergency Read-Only Mode.", true);
+    const entry = createNewEntry();
+    state.vaultData.entries.unshift(entry);
+    selectedEntryId = entry.id;
+    updateVaultTimestamp();
+    markDirty("added");
+    rerender();
   },
-
   onEditEntry: (id) => {
     selectedEntryId = id;
-    renderEditor(getEntryById(id), handlers);
+    rerender();
     armInactivity();
   },
-
   onCancelEdit: () => {
     selectedEntryId = null;
-    renderEditor(null, handlers);
-    armInactivity();
+    rerender();
   },
-
   onSaveEntry: (id) => {
-    if (state.readOnly) return toast("Action disabled in Emergency Read-Only Mode", true);
-    const e = getEntryById(id);
-    if (!e) return;
+    if (state.readOnly) return toast("Action disabled in Emergency Read-Only Mode.", true);
+    const entry = getEntryById(id);
+    if (!entry) return;
+    const values = getEditorFormValues();
+    const normalizedSecret = secretFromText(values.totpSecret || "");
+    const next = { ...values, totpSecret: normalizedSecret };
+    const hasChanges = JSON.stringify({
+      ...cloneSnapshot(entry),
+      totpSecret: entry.totpSecret || "",
+    }) !== JSON.stringify(next);
+    if (!hasChanges) return toast("No changes to save.");
 
-    const vals = getEditorFormValues();
-
-    // Check if changes were actually made
-    const hasChanges = Object.keys(vals).some(k =>
-      JSON.stringify(vals[k]) !== JSON.stringify(e[k] || (Array.isArray(vals[k]) ? [] : ""))
-    );
-
-    if (hasChanges) {
-      // Versioning: Save current state to history before updating
-      e.history = e.history || [];
-      e.history.unshift({
-        savedAt: new Date().toISOString(),
-        snapshot: {
-          title: e.title,
-          url: e.url,
-          username: e.username,
-          password: e.password,
-          notes: e.notes,
-          tags: [...(e.tags || [])]
-        }
-      });
-      // Limit history to last 10 versions to save space
-      if (e.history.length > 10) e.history.length = 10;
-      if (state.changeLog) state.changeLog.edited++;
-    }
-
-    Object.assign(e, vals, { updatedAt: new Date().toISOString() });
-
-    render(appRoot, handlers);
-    renderEditor(getEntryById(id), handlers);
-    armInactivity();
+    entry.history = entry.history || [];
+    entry.history.unshift({
+      savedAt: new Date().toISOString(),
+      snapshot: cloneSnapshot(entry),
+    });
+    if (entry.history.length > 10) entry.history.length = 10;
+    const passwordChanged = entry.password !== next.password;
+    Object.assign(entry, next, { updatedAt: new Date().toISOString() });
+    if (passwordChanged) entry.lastPasswordChangeAt = new Date().toISOString();
+    updateVaultTimestamp();
+    markDirty("edited");
+    refreshTotpCache();
+    rerender();
+    toast("Entry updated. Download the vault to persist changes.");
   },
-
   onRestoreHistory: (entryId, historyIndex) => {
-    if (state.readOnly) return toast("Action disabled in Emergency Read-Only Mode", true);
-    if (!confirm("Are you sure you want to restore this version? The current version will be saved to history.")) return;
-
-    const e = getEntryById(entryId);
-    if (!e || !e.history || !e.history[historyIndex]) return;
-
-    const versionToRestore = e.history[historyIndex];
-
-    // Save current state as history before restoring
-    e.history.unshift({
+    if (state.readOnly) return toast("Action disabled in Emergency Read-Only Mode.", true);
+    const entry = getEntryById(entryId);
+    if (!entry?.history?.[historyIndex]) return;
+    if (!confirm("Restore this saved version? The current version will be pushed into history.")) return;
+    const snapshot = entry.history[historyIndex].snapshot;
+    entry.history.unshift({
       savedAt: new Date().toISOString(),
       reason: "Rollback",
-      snapshot: {
-        title: e.title,
-        url: e.url,
-        username: e.username,
-        password: e.password,
-        notes: e.notes,
-        tags: [...(e.tags || [])]
-      }
+      snapshot: cloneSnapshot(entry),
     });
-
-    // Apply restored snapshot
-    Object.assign(e, versionToRestore.snapshot, { updatedAt: new Date().toISOString() });
-
-    // Correct logic: we just unshifted, so the index might have shifted if we were pointing to a specific index, 
-    // but typically we just pull the data and push new history. 
-    // The previous history items remain secure.
-
-    // Clean up history limit
-    if (e.history.length > 20) e.history.length = 20;
-
-    render(appRoot, handlers);
-    renderEditor(getEntryById(entryId), handlers);
-    toast("Restored entry to previous version.");
-    armInactivity();
+    Object.assign(entry, snapshot, { updatedAt: new Date().toISOString() });
+    if (entry.history.length > 20) entry.history.length = 20;
+    updateVaultTimestamp();
+    markDirty("edited");
+    refreshTotpCache();
+    rerender();
   },
-
   onToggleFavorite: (id) => {
     if (state.readOnly) return;
-    const e = getEntryById(id);
-    if (e) {
-      e.isFavorite = !e.isFavorite;
-      e.updatedAt = new Date().toISOString();
-      render(appRoot, handlers);
-      // If editor is open for this item, re-render it to show state change if we add star there
-      if (selectedEntryId === id) renderEditor(e, handlers);
-    }
-    armInactivity();
+    const entry = getEntryById(id);
+    if (!entry) return;
+    entry.isFavorite = !entry.isFavorite;
+    entry.updatedAt = new Date().toISOString();
+    updateVaultTimestamp();
+    markDirty("edited");
+    rerender();
   },
-
-  onToggleFavoriteFilter: () => {
-    visibleFilter.favoritesOnly = !visibleFilter.favoritesOnly;
-    render(appRoot, handlers);
-    armInactivity();
-  },
-
-  onToggleArchiveFilter: () => {
-    visibleFilter.showArchived = !visibleFilter.showArchived;
-    render(appRoot, handlers);
-    armInactivity();
-  },
-
-  onCopyUsername: async (id) => {
-    const e = getEntryById(id);
-    if (!e) return;
-    if (state.readOnly) return toast("Clipboard disabled in Emergency Read-Only Mode", true);
-
-    try {
-      await navigator.clipboard.writeText(e.username || "");
-      toast("Copied username.");
-      setTimeout(async () => {
-        // Best effort clear
-      }, 20000);
-    } catch {
-      toast("Clipboard copy failed.", true);
-    }
-    armInactivity();
-  },
-
-  onDeleteEntry: (id) => {
-    if (state.readOnly) return toast("Action disabled in Emergency Read-Only Mode", true);
-    // Permanent delete
-    const v = state.vaultData;
-    if (!v) return;
-    v.entries = v.entries.filter((x) => x.id !== id);
-    if (state.changeLog) state.changeLog.deleted++;
-    deletingEntryIds.delete(id);
-    if (selectedEntryId === id) selectedEntryId = null;
-    render(appRoot, handlers);
-    renderEditor(selectedEntryId ? getEntryById(selectedEntryId) : null, handlers);
-    armInactivity();
-  },
-
   onArchiveEntry: (id) => {
-    if (state.readOnly) return toast("Action disabled in Emergency Read-Only Mode", true);
-    const e = getEntryById(id);
-    if (e) {
-      e.archived = true;
-      e.updatedAt = new Date().toISOString();
-      if (state.changeLog) state.changeLog.archived++;
-      toast("Entry archived.");
-
-      // Auto-move selection if keyboard nav active
-      if (keyboardNavIndex >= 0) {
-        // Stay at same index or move up if at end
-        const visible = handlers.getVisibleEntries();
-        if (keyboardNavIndex >= visible.length) keyboardNavIndex = Math.max(0, visible.length - 1);
-      }
-
-      render(appRoot, handlers);
-      if (selectedEntryId === id) renderEditor(null, handlers); // close editor if archived
-    }
-    armInactivity();
+    if (state.readOnly) return toast("Action disabled in Emergency Read-Only Mode.", true);
+    const entry = getEntryById(id);
+    if (!entry) return;
+    entry.archived = true;
+    entry.updatedAt = new Date().toISOString();
+    updateVaultTimestamp();
+    markDirty("archived");
+    if (selectedEntryId === id) selectedEntryId = null;
+    rerender();
   },
-
   onRestoreEntry: (id) => {
-    if (state.readOnly) return toast("Action disabled in Emergency Read-Only Mode", true);
-    const e = getEntryById(id);
-    if (e) {
-      e.archived = false;
-      e.updatedAt = new Date().toISOString();
-      toast("Entry restored.");
-      render(appRoot, handlers);
-      if (selectedEntryId === id) renderEditor(e, handlers);
-    }
-    armInactivity();
+    if (state.readOnly) return toast("Action disabled in Emergency Read-Only Mode.", true);
+    const entry = getEntryById(id);
+    if (!entry) return;
+    entry.archived = false;
+    entry.updatedAt = new Date().toISOString();
+    updateVaultTimestamp();
+    markDirty("edited");
+    rerender();
   },
-
-  onCopyPassword: async (id) => {
-    const e = getEntryById(id);
-    if (!e) return;
-
-    if (state.readOnly) return toast("Clipboard disabled in Emergency Read-Only Mode", true);
-
-    try {
-      await navigator.clipboard.writeText(e.password || "");
-      toast("Copied password to clipboard.");
-      setTimeout(async () => {
-        try { await navigator.clipboard.writeText(""); } catch { }
-      }, 20000);
-    } catch {
-      toast("Clipboard copy failed (browser permission).", true);
-    }
-    armInactivity();
-  },
-
-  onSaveDownload: async () => {
-    if (state.readOnly) return toast("Action disabled in Emergency Read-Only Mode", true);
-    if (!state.vaultData) return;
-
-    if (!state.vaultData) return;
-
-    if (state.changeLog) {
-      const { added, edited, deleted, archived } = state.changeLog;
-      const total = added + edited + deleted + archived;
-      if (total > 0) {
-        const msg = `You changed ${total} entries:\n` +
-          (added ? `• ${added} new\n` : "") +
-          (edited ? `• ${edited} edited\n` : "") +
-          (deleted ? `• ${deleted} deleted\n` : "") +
-          (archived ? `• ${archived} archived\n` : "") +
-          `\nProceed to download?`;
-
-        if (!confirm(msg)) return;
-      }
-    }
-
-    const master = prompt("Enter master password to re-encrypt and download:");
-    if (!master) return;
-
-    state.vaultData.updatedAt = new Date().toISOString();
-
-    try {
-      const fileJson = await reencryptVaultToFile(state.vaultData, master, state.vaultMeta);
-      downloadJson(fileJson, state.fileNameHint || "vault.json");
-      toast("Downloaded updated encrypted vault JSON.");
-    } catch (e) {
-      toast(e?.message || "Failed to encrypt vault.", true);
-    }
-    armInactivity();
-  },
-
-  getVisibleEntries: () => {
-    const v = state.vaultData;
-    if (!v) return [];
-    const { q, tag, favoritesOnly, showArchived } = visibleFilter;
-    let out = [...(v.entries || [])];
-
-    // Filter archived logic
-    if (!showArchived) {
-      out = out.filter(e => !e.archived);
-    } else {
-      // If showArchived is TRUE, maybe we ONLY show archived? 
-      // Or show ALL? Usually "Archive" view shows only archived or mixed.
-      // Let's make it intuitive: if toggle is ON, show everything (or better, make it a mode).
-      // Standard pattern: "Show Archived" implies inclusion. 
-      // But better for "Archive" management: Filter to JUST archived?
-      // Let's do: if showArchived is true, show ONLY archived items to easily find them.
-      out = out.filter(e => e.archived);
-    }
-
-    if (favoritesOnly) {
-      out = out.filter(e => e.isFavorite);
-    }
-    if (q) {
-      const qq = q.toLowerCase();
-      out = out.filter((e) => {
-        const hay = [e.title, e.url, e.username, e.notes, e.password, ...(e.tags || [])].join(" ").toLowerCase();
-        return hay.includes(qq);
-      });
-    }
-    if (tag) {
-      const tt = tag.toLowerCase();
-      out = out.filter((e) => (e.tags || []).some((t) => t.toLowerCase() === tt));
-    }
-
-    // Sort: favorites first
-    out.sort((a, b) => {
-      if (!!a.isFavorite !== !!b.isFavorite) {
-        return a.isFavorite ? -1 : 1;
-      }
-      return 0;
-    });
-
-    return out;
-  },
-
-  // Helper for UI to know which row is selected via keyboard
-  isKeyboardSelected: (index) => index === keyboardNavIndex,
-
-  isShowArchived: () => visibleFilter.showArchived,
-
-  onApplySearch: () => {
-    // Merge new search values with existing filter state (preserving favoritesOnly)
-    visibleFilter = { ...visibleFilter, ...getSearchValues() };
-    render(appRoot, handlers);
-    renderEditor(selectedEntryId ? getEntryById(selectedEntryId) : null, handlers);
-    armInactivity();
-  },
-
-  onClearSearch: () => {
-    // Clear search terms but preserve Favorites toggle? Usually Clear implies 'Reset All'.
-    // Let's reset everything for clarity.
-    visibleFilter = { q: "", tag: "", favoritesOnly: false, showArchived: false };
-    render(appRoot, handlers);
-    renderEditor(selectedEntryId ? getEntryById(selectedEntryId) : null, handlers);
-    armInactivity();
-  },
-
-  onTogglePassword: (id) => {
-    if (visiblePasswords.has(id)) {
-      visiblePasswords.delete(id);
-    } else {
-      visiblePasswords.add(id);
-    }
-    render(appRoot, handlers);
-    armInactivity();
-  },
-
-  isPasswordVisible: (id) => visiblePasswords.has(id),
-
-  isFavoritesFilterOn: () => !!visibleFilter.favoritesOnly,
-
   onInitiateDelete: (id) => {
-    if (state.readOnly) return;
     deletingEntryIds.add(id);
-    render(appRoot, handlers);
-    armInactivity();
+    rerender();
   },
-
   onCancelDelete: (id) => {
     deletingEntryIds.delete(id);
-    render(appRoot, handlers);
+    rerender();
+  },
+  isEntryDeleting: (id) => deletingEntryIds.has(id),
+  onDeleteEntry: (id) => {
+    if (state.readOnly) return toast("Action disabled in Emergency Read-Only Mode.", true);
+    state.vaultData.entries = state.vaultData.entries.filter((entry) => entry.id !== id);
+    deletingEntryIds.delete(id);
+    if (selectedEntryId === id) selectedEntryId = null;
+    updateVaultTimestamp();
+    markDirty("deleted");
+    rerender();
+  },
+  onCopyUsername: async (id) => {
+    const entry = getEntryById(id);
+    if (!entry) return;
+    await copyWithAutoClear(entry.username || "", "Username");
+  },
+  onCopyPassword: async (id) => {
+    const entry = getEntryById(id);
+    if (!entry) return;
+    await copyWithAutoClear(entry.password || "", "Password");
+  },
+  onCopyTotp: async (id) => {
+    const entry = getEntryById(id);
+    if (!entry?.totpSecret) return toast("No TOTP secret configured.", true);
+    const totp = await getEntryTotp(entry);
+    if (!totp.valid || !totp.code) return toast(totp.label, true);
+    await copyWithAutoClear(totp.code, "TOTP code");
+  },
+  onGeneratePassword: (id) => {
+    const entry = getEntryById(id);
+    if (!entry) return;
+    const lenInput = prompt("Generated password length:", "20");
+    if (!lenInput) return;
+    const length = Math.max(12, Number(lenInput) || 20);
+    try {
+      const password = generatePassword({ length, includeUpper: true, includeLower: true, includeNumbers: true, includeSymbols: true });
+      const input = document.getElementById("f_password");
+      if (input) input.value = password;
+      toast("Generated a strong password. Save the entry to keep it.");
+    } catch (error) {
+      toast(error.message, true);
+    }
+  },
+  onSaveDownload: async () => {
+    if (state.readOnly) return toast("Action disabled in Emergency Read-Only Mode.", true);
+    if (!state.vaultData) return;
+    const summary = summarizeChanges();
+    if (summary && !confirm(`Download updated vault?\n\nChanges: ${summary}`)) return;
+    const master = prompt("Enter master password to re-encrypt and download:");
+    if (!master) return;
+    const backupAlso = confirm("Also download a timestamped backup copy?");
+    try {
+      updateVaultTimestamp();
+      state.vaultData.saveHistory.unshift({
+        savedAt: new Date().toISOString(),
+        fileName: state.fileNameHint || "vault.json",
+        changeSummary: summary || "No tracked changes",
+        kdf: getSecuritySettings().preferredKdf,
+      });
+      if (state.vaultData.saveHistory.length > 20) state.vaultData.saveHistory.length = 20;
+      const fileJson = await reencryptVaultToFile(state.vaultData, master, state.vaultMeta, {
+        kdf: getSecuritySettings().preferredKdf,
+      });
+      const primaryName = state.fileNameHint || "vault.json";
+      downloadJson(fileJson, primaryName);
+      if (backupAlso) {
+        downloadJson(fileJson, buildTimestampedFilename(primaryName));
+      }
+      state.vaultMeta.crypto.kdf = getSecuritySettings().preferredKdf;
+      state.upgradeAvailable = false;
+      markSaved(primaryName);
+      toast(backupAlso ? "Downloaded vault and timestamped backup." : "Downloaded updated vault.");
+      rerender();
+    } catch (error) {
+      toast(error.message || "Failed to encrypt vault.", true);
+    }
     armInactivity();
   },
-
-  isEntryDeleting: (id) => deletingEntryIds.has(id),
+  onToggleFavoriteFilter: () => {
+    visibleFilter.favoritesOnly = !visibleFilter.favoritesOnly;
+    rerender();
+  },
+  onToggleArchiveFilter: () => {
+    visibleFilter.showArchived = !visibleFilter.showArchived;
+    rerender();
+  },
+  onApplySearch: () => {
+    visibleFilter = { ...visibleFilter, ...getSearchValues() };
+    rerender();
+  },
+  onClearSearch: () => {
+    visibleFilter = { q: "", tag: "", favoritesOnly: false, showArchived: false };
+    rerender();
+  },
+  onTogglePassword: (id) => {
+    if (visiblePasswords.has(id)) visiblePasswords.delete(id);
+    else visiblePasswords.add(id);
+    rerender();
+  },
+  getVisibleEntries,
+  getFilterState: () => ({ ...visibleFilter }),
+  isShowArchived: () => visibleFilter.showArchived,
+  isFavoritesFilterOn: () => visibleFilter.favoritesOnly,
+  isPasswordVisible: (id) => visiblePasswords.has(id),
+  isKeyboardSelected: (index) => getVisibleEntries()[index]?.id === selectedEntryId,
+  isEntrySelected: (id) => id === selectedEntryId,
+  getAuditSummary: () => getAudit().totals,
+  getEntryAudit: (id) => getAuditById(id),
+  getEntryTotp: (id) => {
+    return totpCache.get(id) || {
+      valid: false,
+      label: getEntryById(id)?.totpSecret ? "Calculating TOTP..." : "No TOTP secret set",
+      code: "",
+      expiresIn: 0,
+    };
+  },
+  getCryptoSummary: () => {
+    const security = getSecuritySettings();
+    return {
+      current: `${state.vaultMeta?.crypto?.kdf || "PBKDF2"} / ${state.vaultMeta?.crypto?.cipher || "AES-GCM"}`,
+      preferred: security.preferredKdf,
+      upgradeAvailable: state.upgradeAvailable,
+      argon2Available: getArgon2Support().available,
+    };
+  },
+  getFileSummary: () => ({
+    name: state.fileNameHint || "vault.json",
+    lastSaved: state.lastSavedAt ? new Date(state.lastSavedAt).toLocaleString() : "Not downloaded in this session",
+  }),
 };
 
-// Initial Render
 function init() {
   try {
-    const root = document.getElementById("app");
-    if (root) {
-      render(root, handlers);
-      updateLockButton();
-    } else {
-      window.addEventListener('DOMContentLoaded', () => {
-        try {
-          render(document.getElementById("app"), handlers);
-          updateLockButton();
-        } catch (e) {
-          document.body.innerHTML = `<div style="color:red; padding:20px;"><h3>Error initializing app:</h3><pre>${e.stack}</pre></div>`;
-        }
-      });
-    }
-  } catch (e) {
-    document.body.innerHTML = `<div style="color:red; padding:20px;"><h3>Error initializing app (main):</h3><pre>${e.stack}</pre></div>`;
+    render(appRoot, handlers);
+    updateLockButton();
+    startTotpTicker();
+    refreshTotpCache();
+  } catch (error) {
+    document.body.innerHTML = `<div style="color:red; padding:20px;"><h3>Error initializing app:</h3><pre>${escapeHtml(error.stack || error.message)}</pre></div>`;
   }
 }
 
+showModeScreen();
 init();
