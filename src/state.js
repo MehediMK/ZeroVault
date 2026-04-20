@@ -13,6 +13,7 @@ export const state = {
   lastSavedAt: null,
   lastSavedFileName: null,
   upgradeAvailable: false,
+  lastUndoSnapshot: null,
 };
 
 export function isUnlocked() {
@@ -51,6 +52,14 @@ export function markSaved(fileName) {
   state.changeLog = { added: 0, edited: 0, deleted: 0, archived: 0, imported: 0 };
 }
 
+export function rememberUndoSnapshot(snapshot) {
+  state.lastUndoSnapshot = snapshot;
+}
+
+export function clearUndoSnapshot() {
+  state.lastUndoSnapshot = null;
+}
+
 export function wipeSensitive() {
   state.readOnly = false;
   if (state._inactivityTimer) {
@@ -81,6 +90,7 @@ export function wipeSensitive() {
   state.lastSavedAt = null;
   state.lastSavedFileName = null;
   state.upgradeAvailable = false;
+  state.lastUndoSnapshot = null;
 }
 
 export function resetInactivityTimer(onTimeoutLock) {

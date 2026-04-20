@@ -1,0 +1,21 @@
+{
+  "name": "ZeroVault",
+  "short_name": "ZeroVault",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0b0d12",
+  "theme_color": "#161b2e",
+  "description": "Offline client-side password vault with encrypted JSON storage.",
+  "icons": [
+    {
+      "src": "apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    },
+    {
+      "src": "favicon.png",
+      "sizes": "16x16",
+      "type": "image/png"
+    }
+  ]
+}

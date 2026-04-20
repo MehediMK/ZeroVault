@@ -38,6 +38,21 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 12px;
+  z-index: 200;
+  background: #fff;
+  color: #111;
+  padding: 10px 14px;
+  border-radius: 8px;
+}
+
+.skip-link:focus {
+  left: 12px;
+}
+
 /* Animations */
 @keyframes fadeIn {
   from {
@@ -344,6 +359,10 @@ button.small {
   position: sticky;
   top: 78px;
   z-index: 20;
+}
+
+#import_preview_host select {
+  min-width: 130px;
 }
 
 .filter-checks,

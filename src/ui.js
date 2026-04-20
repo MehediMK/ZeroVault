@@ -28,6 +28,46 @@ function categories() {
   ];
 }
 
+function detailFieldSpecs(category) {
+  switch (category) {
+    case "card":
+      return [
+        ["cardholderName", "Cardholder Name"],
+        ["cardNumber", "Card Number"],
+        ["expiry", "Expiry"],
+        ["cvv", "CVV"],
+      ];
+    case "identity":
+      return [
+        ["fullName", "Full Name"],
+        ["documentId", "Document ID"],
+        ["issuingCountry", "Issuing Country"],
+      ];
+    case "bank":
+      return [
+        ["bankName", "Bank Name"],
+        ["accountNumber", "Account Number"],
+        ["routingNumber", "Routing / SWIFT"],
+      ];
+    case "license":
+      return [
+        ["product", "Product"],
+        ["licenseKey", "License Key"],
+        ["seatCount", "Seat Count"],
+      ];
+    case "note":
+      return [
+        ["topic", "Topic"],
+        ["owner", "Owner"],
+      ];
+    default:
+      return [
+        ["website", "Website"],
+        ["loginHint", "Login Hint"],
+      ];
+  }
+}
+
 function masked(text) {
   if (!text) return "";
   return "Hidden";
@@ -95,8 +135,9 @@ function renderBulkBar(handlers) {
       el("button", { class: "secondary small", text: "Set Category", onclick: handlers.onBulkSetCategory }),
       el("button", { class: "secondary small", text: "Add Tag", onclick: handlers.onBulkAddTag }),
       el("button", { class: "danger small", text: "Delete", onclick: handlers.onBulkDelete }),
+      bulk.undoAvailable ? el("button", { class: "secondary small", text: "Undo", onclick: handlers.onUndoLastBulkAction }) : null,
       el("button", { class: "secondary small", text: "Clear", onclick: handlers.onClearBulkSelection }),
-    ]),
+    ].filter(Boolean)),
   ]);
 }
 
@@ -140,6 +181,24 @@ function renderSearchCard(handlers) {
     el("div", { class: "actions" }, [
       el("button", { class: "secondary", text: "Apply", onclick: handlers.onApplySearch }),
       el("button", { class: "secondary", text: "Clear", onclick: handlers.onClearSearch }),
+      el("button", { class: "secondary", text: "Open Audit Report", onclick: handlers.onToggleAuditPanel }),
+    ]),
+  ]);
+}
+
+function renderAuditCard(handlers) {
+  if (!handlers.isAuditPanelOpen()) return null;
+  const report = handlers.getAuditReport();
+  return el("div", { class: "card" }, [
+    el("h3", { text: "Audit Report" }),
+    el("div", { class: "stack-sm" }, report.items.slice(0, 12).map((item) =>
+      el("div", { class: "history-row inline wrap" }, [
+        el("span", { class: "title-text", text: item.title }),
+        el("span", { class: `badge ${item.score > 2 ? "badge-danger" : item.score > 0 ? "badge-warn" : "badge-ok"}`, text: item.score > 0 ? item.issues.join(", ") : "Healthy" }),
+      ])
+    )),
+    el("div", { class: "actions" }, [
+      el("button", { class: "secondary", text: "Close", onclick: handlers.onToggleAuditPanel }),
     ]),
   ]);
 }
@@ -240,6 +299,7 @@ function renderUnlocked(handlers) {
         ]),
       ]),
     ]),
+    renderAuditCard(handlers),
     el("div", { class: "card" }, [
       el("h3", { text: handlers.isShowArchived() ? "Archived Entries" : "Entries" }),
       renderEntriesTable(handlers),
@@ -303,6 +363,18 @@ export function renderEditor(entryOrNull, handlers) {
         el("input", inputAttrs({ id: "f_username", type: "text", value: canShowSensitive ? (entry.username || "") : "", placeholder: entry.isSensitive ? "Sensitive username hidden" : "", autocomplete: "off" })),
       ]),
     ]),
+    el("div", { class: "row" }, detailFieldSpecs(entry.category || "login").map(([key, label]) =>
+      el("div", {}, [
+        el("label", { text: label }),
+        el("input", inputAttrs({
+          id: `f_detail_${key}`,
+          type: "text",
+          value: canShowSensitive ? String(entry.details?.[key] || "") : "",
+          placeholder: entry.isSensitive ? "Sensitive field hidden" : "",
+          autocomplete: "off"
+        })),
+      ])
+    )),
     el("div", { class: "row" }, [
       el("div", {}, [
         el("label", { text: "Password" }),
@@ -350,6 +422,16 @@ export function renderEditor(entryOrNull, handlers) {
       el("label", { text: "Notes" }),
       el("textarea", inputAttrs({ id: "f_notes", autocomplete: "off", placeholder: entry.isSensitive && !canShowSensitive ? "Sensitive notes hidden until revealed." : "" })),
     ]),
+    el("div", { class: "row" }, [
+      el("div", {}, [
+        el("label", { text: "Recovery Codes (one per line)" }),
+        el("textarea", inputAttrs({ id: "f_recoveryCodes", autocomplete: "off", placeholder: entry.isSensitive && !canShowSensitive ? "Sensitive recovery codes hidden." : "" })),
+      ]),
+      el("div", {}, [
+        el("label", { text: "Attachment References (one per line)" }),
+        el("textarea", inputAttrs({ id: "f_attachmentRefs", autocomplete: "off", placeholder: "File paths or document references only" })),
+      ]),
+    ]),
     el("div", { class: "card subtle-card" }, [
       el("h4", { text: "TOTP / 2FA" }),
       el("div", { class: "row" }, [
@@ -389,6 +471,10 @@ export function renderEditor(entryOrNull, handlers) {
   host.appendChild(form);
   const notes = document.getElementById("f_notes");
   if (notes && canShowSensitive) notes.value = entry.notes || "";
+  const recovery = document.getElementById("f_recoveryCodes");
+  if (recovery && canShowSensitive) recovery.value = (entry.recoveryCodes || []).join("\n");
+  const attachments = document.getElementById("f_attachmentRefs");
+  if (attachments) attachments.value = (entry.attachmentRefs || []).join("\n");
 
   if (entry.history?.length) {
     host.appendChild(el("div", { class: "card subtle-card", style: "margin-top: 16px;" }, [
@@ -432,6 +518,11 @@ export function getEditorFormValues() {
     passwordExpiryDays: Number(document.getElementById("f_passwordExpiryDays")?.value ?? 0) || 0,
     category: document.getElementById("f_category")?.value ?? "login",
     isSensitive: !!document.getElementById("f_sensitive")?.checked,
+    details: Object.fromEntries(
+      Array.from(document.querySelectorAll("[id^='f_detail_']")).map((node) => [node.id.replace("f_detail_", ""), node.value ?? ""])
+    ),
+    recoveryCodes: (document.getElementById("f_recoveryCodes")?.value ?? "").split("\n").map((line) => line.trim()).filter(Boolean),
+    attachmentRefs: (document.getElementById("f_attachmentRefs")?.value ?? "").split("\n").map((line) => line.trim()).filter(Boolean),
   };
 }
 
