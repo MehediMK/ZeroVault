@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Learn how to back up, snapshot, restore, and recover a ZeroVault encrypted vault safely." />
+  <meta name="theme-color" content="#161b2e" />
+  <title>ZeroVault Backup and Recovery</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="favicon.png" sizes="16x16" type="image/png" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" sizes="180x180" />
+  <link rel="manifest" href="manifest.webmanifest" />
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="header">
+    <div class="header-left">
+      <a href="./index.html"><img src="logo.png" alt="ZeroVault Logo" class="logo" /></a>
+      <h1>ZeroVault Guides</h1>
+    </div>
+    <div class="header-right">
+      <nav class="header-nav" aria-label="Primary">
+        <a href="./index.html">App</a>
+        <a href="./getting-started.html">Getting Started</a>
+        <a href="./security.html">Security</a>
+        <a href="./backup-recovery.html" class="active">Backup & Recovery</a>
+        <a href="./import-guide.html">Import Guide</a>
+        <a href="./faq.html">FAQ</a>
+      </nav>
+    </div>
+  </header>
+  <main class="container docs-layout" id="content">
+    <section class="docs-hero">
+      <div class="card">
+        <h2>Backup and Recovery</h2>
+        <p class="notice">Your encrypted vault file is the source of truth. If you lose it and have no backup, the data is gone.</p>
+      </div>
+      <div class="card">
+        <h3>Recommended Routine</h3>
+        <ol class="docs-list">
+          <li>Create a named snapshot before major edits.</li>
+          <li>Download the updated vault.</li>
+          <li>Also download a timestamped backup.</li>
+          <li>Keep previous copies until the new file opens successfully.</li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="docs-grid">
+      <article class="card">
+        <h3>Snapshots</h3>
+        <ul class="docs-list">
+          <li>Snapshots are in-vault restore points.</li>
+          <li>Use them before imports, bulk edits, and password rotations.</li>
+          <li>Restoring a snapshot changes the live vault state, so download after restore.</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>Download History</h3>
+        <ul class="docs-list">
+          <li>The app records recent download actions inside the vault metadata.</li>
+          <li>Use it to verify when the last clean encrypted export was made.</li>
+          <li>Download history is not a replacement for external backups.</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>Recovery Sheet</h3>
+        <ul class="docs-list">
+          <li>Use the printable recovery sheet for recovery codes and file references.</li>
+          <li>Store printed material separately and securely.</li>
+          <li>Do not leave printed recovery data in shared spaces.</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>Failure Scenarios</h3>
+        <ul class="docs-list">
+          <li>If a new file fails to open, retry with the previous downloaded copy.</li>
+          <li>If you forget the master password, ZeroVault cannot recover the vault.</li>
+          <li>If import or bulk edit goes wrong, use undo or restore a snapshot immediately.</li>
+        </ul>
+      </article>
+    </section>
+  </main>
+  <footer class="footer">
+    <nav class="footer-nav" aria-label="Footer">
+      <a href="./index.html">App</a>
+      <a href="./getting-started.html">Getting Started</a>
+      <a href="./security.html">Security</a>
+      <a href="./backup-recovery.html">Backup & Recovery</a>
+      <a href="./import-guide.html">Import Guide</a>
+      <a href="./faq.html">FAQ</a>
+    </nav>
+    <small>Offline-capable. No servers. No storage. Download your encrypted vault JSON after changes.</small>
+  </footer>
+</body>
+</html>
+

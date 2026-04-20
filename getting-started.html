@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Get started with ZeroVault: create a vault, add entries, save safely, and understand the offline workflow." />
+  <meta name="theme-color" content="#161b2e" />
+  <title>ZeroVault Getting Started</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="favicon.png" sizes="16x16" type="image/png" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" sizes="180x180" />
+  <link rel="manifest" href="manifest.webmanifest" />
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="header">
+    <div class="header-left">
+      <a href="./index.html"><img src="logo.png" alt="ZeroVault Logo" class="logo" /></a>
+      <h1>ZeroVault Guides</h1>
+    </div>
+    <div class="header-right">
+      <nav class="header-nav" aria-label="Primary">
+        <a href="./index.html">App</a>
+        <a href="./getting-started.html" class="active">Getting Started</a>
+        <a href="./security.html">Security</a>
+        <a href="./backup-recovery.html">Backup & Recovery</a>
+        <a href="./import-guide.html">Import Guide</a>
+        <a href="./faq.html">FAQ</a>
+      </nav>
+    </div>
+  </header>
+  <main class="container docs-layout" id="content">
+    <section class="docs-hero">
+      <div class="card">
+        <h2>Getting Started</h2>
+        <p class="notice">ZeroVault works differently from cloud password managers: everything happens locally in your browser, and your vault file stays under your control.</p>
+        <div class="docs-actions actions wrap">
+          <a class="button-link" href="./index.html">Open App</a>
+          <a class="button-link" href="./backup-recovery.html">Read Backup Guide</a>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Quick Path</h3>
+        <ol class="docs-list">
+          <li>Create a new vault or open an existing encrypted JSON file.</li>
+          <li>Add entries, tags, TOTP data, and recovery references.</li>
+          <li>Review audit warnings and validation issues.</li>
+          <li>Use Save & Download after changes.</li>
+          <li>Keep older vault files until the new one is verified.</li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="docs-grid">
+      <article class="card">
+        <h3>1. Create Your Vault</h3>
+        <ul class="docs-list">
+          <li>Choose a strong master password.</li>
+          <li>Select `PBKDF2` by default, or `Argon2id` if a compatible runtime is loaded.</li>
+          <li>Pick an auto-lock timeout that matches your risk tolerance.</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>2. Add Entries</h3>
+        <ul class="docs-list">
+          <li>Use categories like login, card, identity, bank, note, and license.</li>
+          <li>Enable sensitive mode for records that should stay hidden by default.</li>
+          <li>Use the built-in generator for new passwords and track rotation days.</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>3. Watch for Health Issues</h3>
+        <ul class="docs-list">
+          <li>Audit flags reused, weak, or expiring passwords.</li>
+          <li>Validation catches malformed card, bank, identity, and license fields.</li>
+          <li>Review the audit report before downloading major changes.</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>4. Save Correctly</h3>
+        <ul class="docs-list">
+          <li>Changes are not persisted until you download the updated vault file.</li>
+          <li>Create named snapshots before risky edits.</li>
+          <li>Use timestamped backup downloads for version safety.</li>
+        </ul>
+      </article>
+    </section>
+  </main>
+  <footer class="footer">
+    <nav class="footer-nav" aria-label="Footer">
+      <a href="./index.html">App</a>
+      <a href="./getting-started.html">Getting Started</a>
+      <a href="./security.html">Security</a>
+      <a href="./backup-recovery.html">Backup & Recovery</a>
+      <a href="./import-guide.html">Import Guide</a>
+      <a href="./faq.html">FAQ</a>
+    </nav>
+    <small>Offline-capable. No servers. No storage. Download your encrypted vault JSON after changes.</small>
+  </footer>
+</body>
+</html>
+

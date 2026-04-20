@@ -58,12 +58,22 @@
   </script>
   <header class="header">
     <div class="header-left">
-      <img src="logo.png" alt="ZeroVault Logo" class="logo" />
+      <a href="./index.html"><img src="logo.png" alt="ZeroVault Logo" class="logo" /></a>
       <h1>ZeroVault – Client-Side Offline Password Manager</h1>
     </div>
 
-    <div class="header-actions">
-      <button id="lockBtn" class="secondary" disabled>Lock</button>
+    <div class="header-right">
+      <nav class="header-nav" aria-label="Primary">
+        <a href="./index.html" class="active">App</a>
+        <a href="./getting-started.html">Getting Started</a>
+        <a href="./security.html">Security</a>
+        <a href="./backup-recovery.html">Backup & Recovery</a>
+        <a href="./import-guide.html">Import Guide</a>
+        <a href="./faq.html">FAQ</a>
+      </nav>
+      <div class="header-actions">
+        <button id="lockBtn" class="secondary" disabled>Lock</button>
+      </div>
     </div>
   </header>
   <section class="seo-content">
@@ -85,6 +95,14 @@
   <main class="container" id="app" tabindex="-1" role="main" aria-label="ZeroVault application"></main>
 
   <footer class="footer">
+    <nav class="footer-nav" aria-label="Footer">
+      <a href="./index.html">App</a>
+      <a href="./getting-started.html">Getting Started</a>
+      <a href="./security.html">Security</a>
+      <a href="./backup-recovery.html">Backup & Recovery</a>
+      <a href="./import-guide.html">Import Guide</a>
+      <a href="./faq.html">FAQ</a>
+    </nav>
     <small>
       Offline-capable. No servers. No storage. Download your encrypted vault JSON after changes.
     </small>

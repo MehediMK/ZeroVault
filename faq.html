@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Frequently asked questions about ZeroVault offline storage, backups, downloads, master passwords, and supported workflows." />
+  <meta name="theme-color" content="#161b2e" />
+  <title>ZeroVault FAQ</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="favicon.png" sizes="16x16" type="image/png" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" sizes="180x180" />
+  <link rel="manifest" href="manifest.webmanifest" />
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="header">
+    <div class="header-left">
+      <a href="./index.html"><img src="logo.png" alt="ZeroVault Logo" class="logo" /></a>
+      <h1>ZeroVault Guides</h1>
+    </div>
+    <div class="header-right">
+      <nav class="header-nav" aria-label="Primary">
+        <a href="./index.html">App</a>
+        <a href="./getting-started.html">Getting Started</a>
+        <a href="./security.html">Security</a>
+        <a href="./backup-recovery.html">Backup & Recovery</a>
+        <a href="./import-guide.html">Import Guide</a>
+        <a href="./faq.html" class="active">FAQ</a>
+      </nav>
+    </div>
+  </header>
+  <main class="container docs-layout" id="content">
+    <section class="card">
+      <h2>Frequently Asked Questions</h2>
+      <p class="notice">These are the questions users usually ask first when they are used to browser-synced or cloud-based password managers.</p>
+    </section>
+
+    <section class="docs-grid">
+      <article class="card">
+        <h3>Why do I need to download after changes?</h3>
+        <p>ZeroVault keeps the live vault in memory while the app is open. Downloading creates the encrypted file you keep as the durable copy.</p>
+      </article>
+      <article class="card">
+        <h3>Does ZeroVault upload my data anywhere?</h3>
+        <p>No. The design is local-first and offline-first. You control the encrypted JSON file.</p>
+      </article>
+      <article class="card">
+        <h3>What happens if I forget the master password?</h3>
+        <p>The vault cannot be recovered by the app. There is no server-side recovery process.</p>
+      </article>
+      <article class="card">
+        <h3>Can I keep multiple backup versions?</h3>
+        <p>Yes. You should keep timestamped copies and older known-good vault files until the newest file is verified.</p>
+      </article>
+      <article class="card">
+        <h3>What is the difference between snapshots and backups?</h3>
+        <p>Snapshots are restore points stored inside the vault metadata. Backups are separate encrypted files you keep outside the running session.</p>
+      </article>
+      <article class="card">
+        <h3>Can I use Argon2id today?</h3>
+        <p>Yes, if a compatible Argon2 runtime is loaded in the browser environment. Otherwise PBKDF2 remains available.</p>
+      </article>
+      <article class="card">
+        <h3>Is the app usable offline?</h3>
+        <p>Yes. The app is static and includes PWA basics and service-worker caching for offline-capable usage.</p>
+      </article>
+      <article class="card">
+        <h3>How should I handle imports safely?</h3>
+        <p>Create a snapshot first, use the preview screen, resolve uncertain matches, then review the audit report and download the updated vault.</p>
+      </article>
+    </section>
+  </main>
+  <footer class="footer">
+    <nav class="footer-nav" aria-label="Footer">
+      <a href="./index.html">App</a>
+      <a href="./getting-started.html">Getting Started</a>
+      <a href="./security.html">Security</a>
+      <a href="./backup-recovery.html">Backup & Recovery</a>
+      <a href="./import-guide.html">Import Guide</a>
+      <a href="./faq.html">FAQ</a>
+    </nav>
+    <small>Offline-capable. No servers. No storage. Download your encrypted vault JSON after changes.</small>
+  </footer>
+</body>
+</html>

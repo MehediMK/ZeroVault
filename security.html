@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Understand ZeroVault security: local encryption, KDF settings, sensitive mode, clipboard rules, and offline limits." />
+  <meta name="theme-color" content="#161b2e" />
+  <title>ZeroVault Security</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="favicon.png" sizes="16x16" type="image/png" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" sizes="180x180" />
+  <link rel="manifest" href="manifest.webmanifest" />
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="header">
+    <div class="header-left">
+      <a href="./index.html"><img src="logo.png" alt="ZeroVault Logo" class="logo" /></a>
+      <h1>ZeroVault Guides</h1>
+    </div>
+    <div class="header-right">
+      <nav class="header-nav" aria-label="Primary">
+        <a href="./index.html">App</a>
+        <a href="./getting-started.html">Getting Started</a>
+        <a href="./security.html" class="active">Security</a>
+        <a href="./backup-recovery.html">Backup & Recovery</a>
+        <a href="./import-guide.html">Import Guide</a>
+        <a href="./faq.html">FAQ</a>
+      </nav>
+    </div>
+  </header>
+  <main class="container docs-layout" id="content">
+    <section class="docs-hero">
+      <div class="card">
+        <h2>Security Model</h2>
+        <p class="notice">ZeroVault is an offline-first local vault. The browser encrypts and decrypts the vault data, and you manage the encrypted JSON file yourself.</p>
+      </div>
+      <div class="card">
+        <h3>Core Security Rules</h3>
+        <ul class="docs-list">
+          <li>No cloud account or backend storage.</li>
+          <li>No automatic browser persistence of the live vault.</li>
+          <li>Every meaningful change should end with a new encrypted download.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="docs-grid">
+      <article class="card">
+        <h3>Encryption and KDF</h3>
+        <ul class="docs-list">
+          <li>The vault is encrypted client-side before download.</li>
+          <li>`PBKDF2` is broadly compatible and always available.</li>
+          <li>`Argon2id` becomes available when a compatible runtime is loaded.</li>
+          <li>KDF choice is stored in vault metadata for future opens and migrations.</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>Sensitive Mode</h3>
+        <ul class="docs-list">
+          <li>Sensitive entries hide fields by default.</li>
+          <li>Reveal is per-field and automatically times out.</li>
+          <li>Hidden sensitive content is cleared when the tab is hidden.</li>
+          <li>Copying sensitive values can be disabled in security settings.</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>Clipboard and Auto-Lock</h3>
+        <ul class="docs-list">
+          <li>Clipboard content is auto-cleared on a timer when possible.</li>
+          <li>Auto-lock triggers after inactivity.</li>
+          <li>You can also lock immediately on tab hide.</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>What ZeroVault Does Not Protect Against</h3>
+        <ul class="docs-list">
+          <li>A compromised device or malicious browser environment.</li>
+          <li>Loss of your vault file if you keep no backups.</li>
+          <li>A weak master password.</li>
+        </ul>
+      </article>
+    </section>
+  </main>
+  <footer class="footer">
+    <nav class="footer-nav" aria-label="Footer">
+      <a href="./index.html">App</a>
+      <a href="./getting-started.html">Getting Started</a>
+      <a href="./security.html">Security</a>
+      <a href="./backup-recovery.html">Backup & Recovery</a>
+      <a href="./import-guide.html">Import Guide</a>
+      <a href="./faq.html">FAQ</a>
+    </nav>
+    <small>Offline-capable. No servers. No storage. Download your encrypted vault JSON after changes.</small>
+  </footer>
+</body>
+</html>
+

@@ -101,6 +101,40 @@ body {
   gap: 16px;
 }
 
+.header-nav,
+.footer-nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.header-nav a,
+.footer-nav a {
+  color: var(--muted);
+  text-decoration: none;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  transition: var(--transition);
+}
+
+.header-nav a:hover,
+.header-nav a.active,
+.footer-nav a:hover {
+  color: var(--text);
+  border-color: var(--border);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
 .logo {
   height: 38px;
   width: auto;
@@ -123,6 +157,36 @@ body {
   max-width: 1000px;
   margin: 0 auto;
   padding: 24px 20px;
+}
+
+.docs-layout {
+  max-width: 1080px;
+}
+
+.docs-hero {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 20px;
+  align-items: stretch;
+}
+
+.docs-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.docs-list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.docs-list li + li {
+  margin-top: 8px;
+}
+
+.docs-actions {
+  margin-top: 14px;
 }
 
 /* Footer */
@@ -609,6 +673,16 @@ button.small {
     width: 100%;
   }
 
+  .header-right {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .header-nav,
+  .footer-nav {
+    justify-content: center;
+  }
+
   /* Make logo slightly smaller on mobile */
   .logo {
     height: 48px;
@@ -629,6 +703,11 @@ button.small {
 
   .container {
     padding: 16px;
+  }
+
+  .docs-hero,
+  .docs-grid {
+    grid-template-columns: 1fr;
   }
 
   /* Stack buttons on very small screens */

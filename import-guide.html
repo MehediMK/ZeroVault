@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Guide for importing into ZeroVault: supported formats, preview flow, duplicate matching, and merge behavior." />
+  <meta name="theme-color" content="#161b2e" />
+  <title>ZeroVault Import Guide</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="favicon.png" sizes="16x16" type="image/png" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" sizes="180x180" />
+  <link rel="manifest" href="manifest.webmanifest" />
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="header">
+    <div class="header-left">
+      <a href="./index.html"><img src="logo.png" alt="ZeroVault Logo" class="logo" /></a>
+      <h1>ZeroVault Guides</h1>
+    </div>
+    <div class="header-right">
+      <nav class="header-nav" aria-label="Primary">
+        <a href="./index.html">App</a>
+        <a href="./getting-started.html">Getting Started</a>
+        <a href="./security.html">Security</a>
+        <a href="./backup-recovery.html">Backup & Recovery</a>
+        <a href="./import-guide.html" class="active">Import Guide</a>
+        <a href="./faq.html">FAQ</a>
+      </nav>
+    </div>
+  </header>
+  <main class="container docs-layout" id="content">
+    <section class="docs-hero">
+      <div class="card">
+        <h2>Import Guide</h2>
+        <p class="notice">ZeroVault imports through a preview screen first. Review duplicate matches, validation warnings, and the chosen action before confirming.</p>
+      </div>
+      <div class="card">
+        <h3>Supported Sources</h3>
+        <ul class="docs-list">
+          <li>CSV exports from common password managers and browsers.</li>
+          <li>Bitwarden JSON where supported by the importer.</li>
+          <li>ZeroVault normalizes data into its own entry schema before merging.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="docs-grid">
+      <article class="card">
+        <h3>Preview Actions</h3>
+        <ul class="docs-list">
+          <li><strong>Import:</strong> add as a new entry.</li>
+          <li><strong>Duplicate:</strong> force a new copy even if it matches.</li>
+          <li><strong>Merge:</strong> combine compatible fields into an existing record.</li>
+          <li><strong>Replace:</strong> overwrite an existing matching record.</li>
+          <li><strong>Skip:</strong> leave the row out.</li>
+          <li><strong>Review:</strong> resolve uncertain duplicate matches manually.</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>Duplicate Matching</h3>
+        <ul class="docs-list">
+          <li>Matches are scored from title, username, URL host, password, and category overlap.</li>
+          <li>Higher confidence rows default toward merge.</li>
+          <li>Lower confidence rows are intentionally conservative and may stay in review state.</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>Validation Warnings</h3>
+        <ul class="docs-list">
+          <li>Card expiry format, CVV length, bank account structure, and identity document issues are flagged.</li>
+          <li>Warnings should be reviewed before import, especially for non-login categories.</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>Safe Workflow</h3>
+        <ol class="docs-list">
+          <li>Create a snapshot first.</li>
+          <li>Import through preview.</li>
+          <li>Review audit results after import.</li>
+          <li>Download the updated vault and a timestamped backup.</li>
+        </ol>
+      </article>
+    </section>
+  </main>
+  <footer class="footer">
+    <nav class="footer-nav" aria-label="Footer">
+      <a href="./index.html">App</a>
+      <a href="./getting-started.html">Getting Started</a>
+      <a href="./security.html">Security</a>
+      <a href="./backup-recovery.html">Backup & Recovery</a>
+      <a href="./import-guide.html">Import Guide</a>
+      <a href="./faq.html">FAQ</a>
+    </nav>
+    <small>Offline-capable. No servers. No storage. Download your encrypted vault JSON after changes.</small>
+  </footer>
+</body>
+</html>
+
