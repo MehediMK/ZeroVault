@@ -75,6 +75,9 @@ export function auditVault(entries = []) {
     const pw = entry.password || "";
     const ageSource = entry.lastPasswordChangeAt || entry.updatedAt || entry.createdAt;
     const ageMs = ageSource ? now - new Date(ageSource).getTime() : 0;
+    const expiryDays = Number(entry.passwordExpiryDays || 0);
+    const expiresSoon = expiryDays > 0 && ageMs > Math.max(0, expiryDays - 7) * 24 * 60 * 60 * 1000;
+    const expired = expiryDays > 0 && ageMs > expiryDays * 24 * 60 * 60 * 1000;
 
     if (!pw) issues.push("Missing password");
     if (pw && pw.length < 12) issues.push("Short password");
@@ -84,7 +87,10 @@ export function auditVault(entries = []) {
     if (pw && !/[^a-zA-Z0-9]/.test(pw)) issues.push("No symbol");
     if (pw && (passwordMap.get(pw)?.length || 0) > 1) issues.push("Reused password");
     if (ageMs > yearMs) issues.push("Password older than 1 year");
+    if (expired) issues.push("Password expired");
+    else if (expiresSoon) issues.push("Password expiring soon");
     if (!entry.totpSecret) issues.push("No TOTP configured");
+    if (entry.isSensitive) issues.push("Sensitive entry");
 
     return {
       id: entry.id,
@@ -101,6 +107,7 @@ export function auditVault(entries = []) {
     missing: items.filter((item) => item.issues.includes("Missing password")).length,
     old: items.filter((item) => item.issues.includes("Password older than 1 year")).length,
     noTotp: items.filter((item) => item.issues.includes("No TOTP configured")).length,
+    expiring: items.filter((item) => item.issues.includes("Password expired") || item.issues.includes("Password expiring soon")).length,
   };
 
   return { totals, items };

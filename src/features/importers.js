@@ -45,18 +45,26 @@ function parseCsv(text) {
 }
 
 function mapCsvRow(row, source) {
+  const title = row.name || row.title || row.site || row.issuer || "";
+  const notes = row.notes || row.note || "";
+  const category = /card|bank|iban|swift/i.test(notes) ? "card"
+    : /license|serial|product key/i.test(notes) ? "license"
+    : /identity|passport|ssn/i.test(notes) ? "identity"
+    : "login";
   return {
-    title: row.name || row.title || row.site || row.issuer || "",
+    title,
     url: row.login_uri || row.url || row.website || "",
     username: row.login_username || row.username || row.user || row.email || "",
     password: row.login_password || row.password || row.pass || "",
-    notes: row.notes || row.note || "",
+    notes,
     tags: String(row.folder || row.grouping || row.tags || "")
       .split(/[;,]/)
       .map((tag) => tag.trim())
       .filter(Boolean),
     totpSecret: row.login_totp || row.totp || row.otpsecret || "",
     importedFrom: source,
+    category,
+    rawPreview: `${title} ${row.login_uri || row.url || ""} ${row.login_username || row.username || ""}`.trim(),
   };
 }
 
@@ -73,6 +81,8 @@ function mapBitwardenJson(data) {
       tags: Array.isArray(item.collectionIds) ? item.collectionIds : [],
       totpSecret: item.login.totp || "",
       importedFrom: "Bitwarden JSON",
+      category: "login",
+      rawPreview: `${item.name || ""} ${item.login.username || ""}`.trim(),
     }));
 }
 

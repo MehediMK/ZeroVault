@@ -14,6 +14,7 @@ function createDefaultSettings() {
 
 function normalizeEntry(entry = {}) {
   const now = new Date().toISOString();
+  const passwordHistory = Array.isArray(entry.passwordHistory) ? entry.passwordHistory : [];
   return {
     id: entry.id || crypto.randomUUID(),
     title: entry.title || "",
@@ -26,6 +27,10 @@ function normalizeEntry(entry = {}) {
     totpDigits: entry.totpDigits || 6,
     totpPeriod: entry.totpPeriod || 30,
     history: Array.isArray(entry.history) ? entry.history : [],
+    passwordHistory,
+    passwordExpiryDays: Number(entry.passwordExpiryDays || 0) || 0,
+    category: entry.category || "login",
+    isSensitive: !!entry.isSensitive,
     isFavorite: !!entry.isFavorite,
     archived: !!entry.archived,
     importedFrom: entry.importedFrom || "",

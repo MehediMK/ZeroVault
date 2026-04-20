@@ -340,6 +340,27 @@ button.small {
   border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
+.bulk-bar {
+  position: sticky;
+  top: 78px;
+  z-index: 20;
+}
+
+.filter-checks,
+.generator-checks,
+.editor-toggles {
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.generator-grid {
+  align-items: center;
+}
+
+.sensitive-glow {
+  box-shadow: 0 0 0 2px rgba(255, 92, 122, 0.25);
+}
+
 @media (max-width: 800px) {
   .dashboard-grid {
     grid-template-columns: 1fr;
@@ -347,6 +368,63 @@ button.small {
 
   .stats-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .header {
+    padding: 14px 20px;
+  }
+
+  .container {
+    padding: 16px 12px 28px;
+  }
+
+  .card {
+    padding: 16px;
+    margin-bottom: 14px;
+  }
+
+  .actions {
+    gap: 8px;
+  }
+
+  .actions button,
+  .inline button {
+    width: 100%;
+  }
+
+  .mobile-cards thead {
+    display: none;
+  }
+
+  .mobile-cards,
+  .mobile-cards tbody,
+  .mobile-cards tr,
+  .mobile-cards td {
+    display: block;
+    width: 100%;
+  }
+
+  .mobile-cards tr {
+    border: 1px solid var(--border);
+    margin-bottom: 12px;
+    border-radius: 12px;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  .mobile-cards td {
+    border: none;
+    padding: 10px 12px;
+  }
+
+  .mobile-cards td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 4px;
+    letter-spacing: 0.04em;
   }
 }
 
