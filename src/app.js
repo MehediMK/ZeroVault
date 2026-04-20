@@ -19,6 +19,8 @@ const lockBtn = document.getElementById("lockBtn");
 
 let selectedEntryId = null;
 let visibleFilter = defaultFilterState();
+let currentPage = 1;
+const PAGE_SIZE = 10;
 let deletingEntryIds = new Set();
 let qrState = { chunks: [], index: 0 };
 let keyboardNavIndex = -1;
@@ -109,6 +111,7 @@ function lockNow(message = "") {
   selectedEntryId = null;
   keyboardNavIndex = -1;
   visibleFilter = defaultFilterState();
+  currentPage = 1;
   deletingEntryIds.clear();
   qrState = { chunks: [], index: 0 };
   bulkSelectedIds.clear();
@@ -211,6 +214,14 @@ function getEntryAudit(id) {
 }
 
 function getVisibleEntries() {
+  const filtered = getFilteredEntries();
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  if (currentPage > totalPages) currentPage = totalPages;
+  const start = (currentPage - 1) * PAGE_SIZE;
+  return filtered.slice(start, start + PAGE_SIZE);
+}
+
+function getFilteredEntries() {
   const entries = [...(state.vaultData?.entries || [])];
   const { q, tag, category, sort, favoritesOnly, showArchived, weakOnly, sensitiveOnly, expiringOnly } = visibleFilter;
   let out = showArchived ? entries.filter((entry) => entry.archived) : entries.filter((entry) => !entry.archived);
@@ -243,6 +254,28 @@ function getVisibleEntries() {
     return new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0);
   });
   return out;
+}
+
+function getPaginationSummary() {
+  const totalItems = getFilteredEntries().length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
+  if (currentPage > totalPages) currentPage = totalPages;
+  return {
+    currentPage,
+    pageSize: PAGE_SIZE,
+    totalItems,
+    totalPages,
+    startItem: totalItems ? (currentPage - 1) * PAGE_SIZE + 1 : 0,
+    endItem: Math.min(currentPage * PAGE_SIZE, totalItems),
+  };
+}
+
+function syncPageToEntry(id) {
+  const filtered = getFilteredEntries();
+  const index = filtered.findIndex((entry) => entry.id === id);
+  if (index >= 0) {
+    currentPage = Math.floor(index / PAGE_SIZE) + 1;
+  }
 }
 
 async function copyWithAutoClear(value, label) {
@@ -757,12 +790,14 @@ const handlers = {
     const entry = createNewEntry();
     state.vaultData.entries.unshift(entry);
     selectedEntryId = entry.id;
+    syncPageToEntry(entry.id);
     updateVaultTimestamp();
     markDirty("added");
     rerender();
   },
   onEditEntry: (id) => {
     selectedEntryId = id;
+    syncPageToEntry(id);
     rerender();
   },
   onCancelEdit: () => {
@@ -940,8 +975,22 @@ const handlers = {
   onToggleWeakFilter: () => { visibleFilter.weakOnly = !visibleFilter.weakOnly; rerender(); },
   onToggleSensitiveFilter: () => { visibleFilter.sensitiveOnly = !visibleFilter.sensitiveOnly; rerender(); },
   onToggleExpiringFilter: () => { visibleFilter.expiringOnly = !visibleFilter.expiringOnly; rerender(); },
-  onApplySearch: () => { visibleFilter = { ...visibleFilter, ...getSearchValues() }; rerender(); },
-  onClearSearch: () => { visibleFilter = defaultFilterState(); rerender(); },
+  onApplySearch: () => { visibleFilter = { ...visibleFilter, ...getSearchValues() }; currentPage = 1; rerender(); },
+  onClearSearch: () => { visibleFilter = defaultFilterState(); currentPage = 1; rerender(); },
+  onGoToPage: (page) => {
+    const { totalPages } = getPaginationSummary();
+    currentPage = Math.min(Math.max(1, page), totalPages);
+    rerender();
+  },
+  onNextPage: () => {
+    const { totalPages } = getPaginationSummary();
+    currentPage = Math.min(currentPage + 1, totalPages);
+    rerender();
+  },
+  onPrevPage: () => {
+    currentPage = Math.max(currentPage - 1, 1);
+    rerender();
+  },
   onToggleBulkEntry: (id) => {
     if (bulkSelectedIds.has(id)) bulkSelectedIds.delete(id);
     else bulkSelectedIds.add(id);
@@ -1024,6 +1073,7 @@ const handlers = {
     rerender();
   },
   getVisibleEntries,
+  getPaginationSummary,
   getFilterState: () => ({ ...visibleFilter }),
   isShowArchived: () => visibleFilter.showArchived,
   getAuditSummary: () => getAudit().totals,

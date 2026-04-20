@@ -212,6 +212,7 @@ function checkbox(label, checked, handler) {
 
 function renderEntriesTable(handlers) {
   const entries = handlers.getVisibleEntries();
+  const pagination = handlers.getPaginationSummary();
   const table = el("table", { class: "table mobile-cards" });
   const thead = el("thead", {}, [
     el("tr", {}, [
@@ -279,7 +280,17 @@ function renderEntriesTable(handlers) {
 
   table.appendChild(thead);
   table.appendChild(tbody);
-  return el("div", { class: "table-wrapper" }, [table]);
+  return el("div", {}, [
+    el("div", { class: "table-wrapper" }, [table]),
+    el("div", { class: "pagination-bar inline wrap" }, [
+      el("span", { class: "small muted", text: pagination.totalItems ? `Showing ${pagination.startItem}-${pagination.endItem} of ${pagination.totalItems}` : "No entries" }),
+      el("div", { class: "inline wrap" }, [
+        el("button", { class: "secondary small", text: "Previous", onclick: handlers.onPrevPage, disabled: pagination.currentPage <= 1 }),
+        el("span", { class: "badge", text: `Page ${pagination.currentPage} / ${pagination.totalPages}` }),
+        el("button", { class: "secondary small", text: "Next", onclick: handlers.onNextPage, disabled: pagination.currentPage >= pagination.totalPages }),
+      ]),
+    ]),
+  ]);
 }
 
 function renderUnlocked(handlers) {
@@ -299,14 +310,14 @@ function renderUnlocked(handlers) {
         ]),
       ]),
     ]),
+    el("div", { class: "card" }, [
+      el("h3", { text: "Entry Editor" }),
+      el("div", { id: "editorHost" }, [el("p", { class: "small muted", text: "Select an entry to view or edit it." })]),
+    ]),
     renderAuditCard(handlers),
     el("div", { class: "card" }, [
       el("h3", { text: handlers.isShowArchived() ? "Archived Entries" : "Entries" }),
       renderEntriesTable(handlers),
-    ]),
-    el("div", { class: "card" }, [
-      el("h3", { text: "Entry Editor" }),
-      el("div", { id: "editorHost" }, [el("p", { class: "small muted", text: "Select an entry to view or edit it." })]),
     ]),
   ].filter(Boolean));
 }

@@ -361,6 +361,13 @@ button.small {
   z-index: 20;
 }
 
+.pagination-bar {
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+
 #import_preview_host select {
   min-width: 130px;
 }
@@ -404,6 +411,11 @@ button.small {
 
   .actions {
     gap: 8px;
+  }
+
+  .pagination-bar {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .actions button,
