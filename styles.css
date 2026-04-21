@@ -189,6 +189,44 @@ body {
   margin-top: 14px;
 }
 
+.landing-grid {
+  display: grid;
+  grid-template-columns: 1.25fr 0.75fr;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.pill-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.pill-list span {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: #101524;
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+.content-prose p {
+  margin-top: 0;
+}
+
+.content-prose p + p {
+  margin-top: 12px;
+}
+
 /* Footer */
 .footer {
   padding: 24px 5%;
@@ -706,7 +744,9 @@ button.small {
   }
 
   .docs-hero,
-  .docs-grid {
+  .docs-grid,
+  .landing-grid,
+  .feature-grid {
     grid-template-columns: 1fr;
   }
 

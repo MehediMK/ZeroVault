@@ -1,7 +1,7 @@
 {
   "name": "ZeroVault",
   "short_name": "ZeroVault",
-  "start_url": "./",
+  "start_url": "./app.html",
   "display": "standalone",
   "background_color": "#0b0d12",
   "theme_color": "#161b2e",

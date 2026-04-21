@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ZeroVault Troubleshooting</title>
+  <meta name="description" content="Troubleshooting guide for ZeroVault, including what to do when a vault file will not open, imports go wrong, or backups need to be restored." />
+  <meta name="keywords" content="password vault troubleshooting, encrypted vault file won't open, restore password vault backup" />
+  <meta name="robots" content="index, follow" />
+  <meta name="theme-color" content="#161b2e" />
+  <link rel="canonical" href="https://mehedimk.github.io/ZeroVault/troubleshooting.html" />
+  <meta property="og:title" content="ZeroVault Troubleshooting" />
+  <meta property="og:description" content="Troubleshooting guide for vault open failures, import issues, and password vault recovery." />
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="https://mehedimk.github.io/ZeroVault/troubleshooting.html" />
+  <meta property="og:image" content="https://mehedimk.github.io/ZeroVault/og-image.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="ZeroVault Troubleshooting" />
+  <meta name="twitter:description" content="Troubleshooting guide for encrypted vault errors, imports, and recovery workflows." />
+  <meta name="twitter:image" content="https://mehedimk.github.io/ZeroVault/og-image.png" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="header">
+    <div class="header-left">
+      <a href="./index.html"><img src="logo.png" alt="ZeroVault logo" class="logo" /></a>
+      <h1>ZeroVault Troubleshooting</h1>
+    </div>
+    <div class="header-right">
+      <nav class="header-nav" aria-label="Primary">
+        <a href="./index.html">Home</a>
+        <a href="./app.html">Open App</a>
+        <a href="./getting-started.html">Getting Started</a>
+        <a href="./security.html">Security</a>
+        <a href="./backup-recovery.html">Backup & Recovery</a>
+        <a href="./import-guide.html">Import Guide</a>
+        <a href="./faq.html">FAQ</a>
+        <a href="./troubleshooting.html" class="active">Troubleshooting</a>
+      </nav>
+    </div>
+  </header>
+  <main class="container docs-layout" id="content">
+    <section class="card">
+      <h2>Troubleshooting Common Problems</h2>
+      <p class="notice">These are the operational issues users run into most often with local encrypted vault workflows.</p>
+    </section>
+    <section class="docs-grid">
+      <article class="card">
+        <h3>Vault File Will Not Open</h3>
+        <ul class="docs-list">
+          <li>Verify the master password carefully.</li>
+          <li>Try an older known-good backup file.</li>
+          <li>Confirm the file was fully downloaded and not partially overwritten.</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>Import Went Wrong</h3>
+        <ul class="docs-list">
+          <li>Use undo immediately if available.</li>
+          <li>Restore the snapshot created before import.</li>
+          <li>Retry import after reviewing `Review` and validation warnings.</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>Latest Changes Are Missing</h3>
+        <ul class="docs-list">
+          <li>Check whether the updated vault was actually downloaded.</li>
+          <li>Use save history and backups to identify the most recent file.</li>
+          <li>Remember that session edits are not permanent until exported.</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>Recovery Steps</h3>
+        <ul class="docs-list">
+          <li><a href="./backup-recovery.html">Read the backup and recovery guide</a></li>
+          <li><a href="./faq.html">Review the FAQ</a></li>
+          <li><a href="./index.html">Open the app and inspect snapshots or save history</a></li>
+        </ul>
+      </article>
+    </section>
+  </main>
+  <footer class="footer">
+    <nav class="footer-nav" aria-label="Footer">
+      <a href="./index.html">Home</a>
+      <a href="./app.html">Open App</a>
+      <a href="./getting-started.html">Getting Started</a>
+      <a href="./security.html">Security</a>
+      <a href="./backup-recovery.html">Backup & Recovery</a>
+      <a href="./import-guide.html">Import Guide</a>
+      <a href="./faq.html">FAQ</a>
+      <a href="./offline-password-manager.html">Offline Guide</a>
+      <a href="./client-side-password-manager.html">Client-Side Guide</a>
+      <a href="./changelog.html">Changelog</a>
+    </nav>
+    <small>Offline-capable. No servers. No storage. Download your encrypted vault JSON after changes.</small>
+  </footer>
+</body>
+</html>

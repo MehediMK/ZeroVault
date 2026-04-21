@@ -5,7 +5,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <!-- Strong baseline CSP (no inline JS) -->
   <meta http-equiv="Content-Security-Policy" content="
         default-src 'self';
         script-src 'self' 'unsafe-inline';
@@ -16,25 +15,62 @@
         form-action 'self';
         upgrade-insecure-requests;
       " />
-  <meta name="description"
-    content="ZeroVault is a secure, offline, client-side password manager. All passwords are encrypted locally and stored only in a downloadable JSON file. No servers. No tracking. No cloud." />
-
-  <meta name="keywords"
-    content="offline password manager, client-side password vault, encrypted json password manager, github pages password manager, zero trust password vault, no cloud password manager" />
-
+  <title>ZeroVault | Offline Password Manager with Local Encryption</title>
+  <meta name="description" content="ZeroVault is an offline password manager and client-side password vault with local encryption, portable encrypted JSON storage, backup workflows, and no cloud dependency." />
+  <meta name="keywords" content="offline password manager, client-side password manager, local password vault, encrypted json password manager, no cloud password manager, portable password vault" />
   <meta name="author" content="ZeroVault" />
-  <meta name="robots" content="index, follow" />
+  <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
   <meta name="theme-color" content="#161b2e" />
+  <link rel="canonical" href="https://mehedimk.github.io/ZeroVault/" />
 
-  <!-- Open Graph -->
-  <meta property="og:title" content="ZeroVault – Offline Client-Side Password Manager" />
-  <meta property="og:description"
-    content="A zero-trust password vault that runs entirely in your browser. Encrypted JSON. No servers. No storage." />
+  <meta property="og:title" content="ZeroVault | Offline Password Manager with Local Encryption" />
+  <meta property="og:description" content="A client-side password manager with portable encrypted JSON storage, backup-oriented workflows, and no cloud dependency." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://mehedimk.github.io/ZeroVault/" />
   <meta property="og:image" content="https://mehedimk.github.io/ZeroVault/og-image.png" />
+  <meta property="og:site_name" content="ZeroVault" />
 
-  <title>ZeroVault – Offline Client-Side Password Manager (Encrypted JSON)</title>
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="ZeroVault | Offline Password Manager with Local Encryption" />
+  <meta name="twitter:description" content="Browser-based password vault with local encryption, portable JSON storage, backup workflows, and offline-first usage." />
+  <meta name="twitter:image" content="https://mehedimk.github.io/ZeroVault/og-image.png" />
+
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "ZeroVault",
+      "applicationCategory": "SecurityApplication",
+      "operatingSystem": "Web",
+      "description": "ZeroVault is an offline password manager and client-side password vault with local encryption and portable encrypted JSON storage.",
+      "url": "https://mehedimk.github.io/ZeroVault/",
+      "image": "https://mehedimk.github.io/ZeroVault/og-image.png",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "featureList": [
+        "Offline password manager",
+        "Client-side encryption",
+        "Encrypted JSON vault export",
+        "Password generator",
+        "Password health audit",
+        "TOTP support",
+        "Restore points and snapshots",
+        "Import preview and conflict review"
+      ]
+    }
+  </script>
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "name": "ZeroVault",
+      "url": "https://mehedimk.github.io/ZeroVault/"
+    }
+  </script>
+
   <link rel="stylesheet" href="styles.css" />
   <link rel="icon" href="favicon.png" sizes="16x16" type="image/png" />
   <link rel="apple-touch-icon" href="apple-touch-icon.png" sizes="180x180" />
@@ -42,7 +78,7 @@
 </head>
 
 <body>
-  <a class="skip-link" href="#app">Skip to app</a>
+  <a class="skip-link" href="#content">Skip to content</a>
   <div id="global-error" style="display:none; color:red; padding:20px; background:#fff; border:2px solid red;"></div>
   <script>
     window.addEventListener('error', function (event) {
@@ -58,81 +94,118 @@
   </script>
   <header class="header">
     <div class="header-left">
-      <a href="./index.html"><img src="logo.png" alt="ZeroVault Logo" class="logo" /></a>
-      <h1>ZeroVault – Client-Side Offline Password Manager</h1>
+      <a href="./index.html"><img src="logo.png" alt="ZeroVault logo for the offline password manager project" class="logo" /></a>
+      <h1>ZeroVault</h1>
     </div>
 
     <div class="header-right">
       <nav class="header-nav" aria-label="Primary">
-        <a href="./index.html" class="active">App</a>
+        <a href="./index.html" class="active">Home</a>
+        <a href="./app.html">Open App</a>
         <a href="./getting-started.html">Getting Started</a>
         <a href="./security.html">Security</a>
         <a href="./backup-recovery.html">Backup & Recovery</a>
         <a href="./import-guide.html">Import Guide</a>
         <a href="./faq.html">FAQ</a>
+        <a href="./offline-password-manager.html">Offline Guide</a>
+        <a href="./client-side-password-manager.html">Client-Side Guide</a>
       </nav>
-      <div class="header-actions">
-        <button id="lockBtn" class="secondary" disabled>Lock</button>
-      </div>
     </div>
   </header>
-  <section class="seo-content">
-    <h2>Offline Client-Side Password Manager</h2>
-    <p>
-      ZeroVault is a secure password manager that runs entirely in your browser.
-      All passwords are encrypted locally using modern cryptography and stored only
-      in a downloadable JSON file that you control.
-    </p>
 
-    <ul>
-      <li>No cloud storage</li>
-      <li>No servers</li>
-      <li>No tracking</li>
-      <li>Works offline</li>
-    </ul>
-  </section>
+  <main class="container docs-layout" id="content">
+    <section class="landing-grid">
+      <article class="card content-prose">
+        <h2>Offline Password Manager with Local Encryption</h2>
+        <p>ZeroVault is an offline password manager built for users who want a client-side password vault without cloud lock-in. It runs in the browser, encrypts locally, and stores credentials in a portable encrypted JSON file you control.</p>
+        <p>If you are looking for a password manager without cloud sync, a local password vault, or an encrypted JSON password manager that works on static hosting, ZeroVault is designed for that workflow.</p>
+        <div class="pill-list" aria-label="Key features">
+          <span>No servers</span>
+          <span>No cloud dependency</span>
+          <span>Client-side encryption</span>
+          <span>Portable encrypted JSON</span>
+          <span>Password audit</span>
+          <span>TOTP support</span>
+        </div>
+        <div class="docs-actions actions wrap">
+          <a class="button-link" href="./app.html">Open the app</a>
+          <a class="button-link" href="./getting-started.html">How it works</a>
+          <a class="button-link" href="./offline-password-manager.html">Offline password manager guide</a>
+        </div>
+      </article>
+      <aside class="card">
+        <h3>Why Users Choose ZeroVault</h3>
+        <ul class="docs-list">
+          <li>They want a password manager without mandatory cloud storage.</li>
+          <li>They want to keep their encrypted vault file themselves.</li>
+          <li>They need backup, restore, and recovery workflows that are explicit.</li>
+          <li>They want offline-first access on static hosting or local devices.</li>
+        </ul>
+      </aside>
+    </section>
 
-  <main class="container" id="app" tabindex="-1" role="main" aria-label="ZeroVault application"></main>
+    <section class="feature-grid">
+      <article class="card">
+        <h3>Password Vault Features</h3>
+        <p>Password generation, password health audit, entry categories, sensitive mode, TOTP support, search, filters, favorites, archive, pagination, and bulk actions.</p>
+      </article>
+      <article class="card">
+        <h3>Backup and Recovery Features</h3>
+        <p>Undo history, entry history, password history, named snapshots, restore points, download history, printable recovery sheets, and backup-oriented save flows.</p>
+      </article>
+      <article class="card">
+        <h3>Import and Migration Features</h3>
+        <p>Import preview, duplicate matching, merge and replace options, validation warnings, and KDF metadata that supports future crypto migration paths.</p>
+      </article>
+    </section>
+
+    <section class="docs-grid">
+      <article class="card">
+        <h3>How ZeroVault Works</h3>
+        <ol class="docs-list">
+          <li>Create a new vault or open an encrypted JSON vault file.</li>
+          <li>Manage passwords, TOTP secrets, identities, bank records, cards, and notes locally in the browser.</li>
+          <li>Download the re-encrypted vault file after changes so your latest state is preserved.</li>
+        </ol>
+      </article>
+      <article class="card">
+        <h3>Best-Fit Search Intents</h3>
+        <ul class="docs-list">
+          <li><a href="./offline-password-manager.html">Best offline password manager</a></li>
+          <li><a href="./client-side-password-manager.html">What is a client-side password manager</a></li>
+          <li><a href="./backup-recovery.html">How to back up a password vault</a></li>
+          <li><a href="./troubleshooting.html">Why an encrypted vault file will not open</a></li>
+        </ul>
+      </article>
+    </section>
+
+    <section class="card" aria-labelledby="app-title">
+      <h2 id="app-title">Use the App</h2>
+      <p class="small muted">The interactive vault is now on its own page so the homepage can stay focused on product information and search visibility.</p>
+      <div class="actions wrap">
+        <a class="button-link" href="./app.html">Open ZeroVault App</a>
+        <a class="button-link" href="./getting-started.html">Read Getting Started</a>
+        <a class="button-link" href="./security.html">Read Security Guide</a>
+      </div>
+    </section>
+  </main>
 
   <footer class="footer">
     <nav class="footer-nav" aria-label="Footer">
-      <a href="./index.html">App</a>
+      <a href="./index.html">Home</a>
+      <a href="./app.html">Open App</a>
       <a href="./getting-started.html">Getting Started</a>
       <a href="./security.html">Security</a>
       <a href="./backup-recovery.html">Backup & Recovery</a>
       <a href="./import-guide.html">Import Guide</a>
       <a href="./faq.html">FAQ</a>
+      <a href="./offline-password-manager.html">Offline Guide</a>
+      <a href="./client-side-password-manager.html">Client-Side Guide</a>
+      <a href="./changelog.html">Changelog</a>
+      <a href="./troubleshooting.html">Troubleshooting</a>
     </nav>
-    <small>
-      Offline-capable. No servers. No storage. Download your encrypted vault JSON after changes.
-    </small>
+    <small>Offline-capable. No servers. No storage. Download your encrypted vault JSON after changes.</small>
   </footer>
-
-  <script src="src/qrcode.js"></script>
-  <script src="src/argon2-adapter.js"></script>
-  <script type="module" src="src/app.js"></script>
-  <script>
-    if ("serviceWorker" in navigator) {
-      window.addEventListener("load", function () {
-        navigator.serviceWorker.register("./service-worker.js").then(function (registration) {
-          if (registration.waiting) {
-            window.__zerovaultUpdateReady = true;
-            window.dispatchEvent(new CustomEvent("zerovault-update-ready"));
-          }
-          registration.addEventListener("updatefound", function () {
-            var worker = registration.installing;
-            if (!worker) return;
-            worker.addEventListener("statechange", function () {
-              if (worker.state === "installed" && navigator.serviceWorker.controller) {
-                window.__zerovaultUpdateReady = true;
-                window.dispatchEvent(new CustomEvent("zerovault-update-ready"));
-              }
-            });
-          });
-        }).catch(function () {});
-      });
-    }
-  </script>
 </body>
 
 </html>

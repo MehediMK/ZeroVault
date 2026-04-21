@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <meta http-equiv="Content-Security-Policy" content="
+        default-src 'self';
+        script-src 'self' 'unsafe-inline';
+        style-src 'self' 'unsafe-inline';
+        img-src 'self' data:;
+        object-src 'none';
+        base-uri 'none';
+        form-action 'self';
+        upgrade-insecure-requests;
+      " />
+  <title>ZeroVault App | Offline Password Vault</title>
+  <meta name="description" content="Open the ZeroVault app to create, unlock, and manage an offline password vault with local encryption and encrypted JSON downloads." />
+  <meta name="robots" content="index, follow" />
+  <meta name="theme-color" content="#161b2e" />
+  <link rel="canonical" href="https://mehedimk.github.io/ZeroVault/app.html" />
+  <meta property="og:title" content="ZeroVault App | Offline Password Vault" />
+  <meta property="og:description" content="Use the ZeroVault web app to manage an offline password vault with local encryption and encrypted JSON exports." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://mehedimk.github.io/ZeroVault/app.html" />
+  <meta property="og:image" content="https://mehedimk.github.io/ZeroVault/og-image.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="ZeroVault App | Offline Password Vault" />
+  <meta name="twitter:description" content="Open the ZeroVault app to manage an offline password vault with local encryption." />
+  <meta name="twitter:image" content="https://mehedimk.github.io/ZeroVault/og-image.png" />
+
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="favicon.png" sizes="16x16" type="image/png" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" sizes="180x180" />
+  <link rel="manifest" href="manifest.webmanifest" />
+</head>
+
+<body>
+  <a class="skip-link" href="#app">Skip to app</a>
+  <div id="global-error" style="display:none; color:red; padding:20px; background:#fff; border:2px solid red;"></div>
+  <script>
+    window.addEventListener('error', function (event) {
+      var display = document.getElementById('global-error');
+      display.style.display = 'block';
+      display.innerHTML += '<h3>Global Error:</h3><pre>' + (event.error ? event.error.stack : event.message) + '</pre>';
+    });
+    window.addEventListener('unhandledrejection', function (event) {
+      var display = document.getElementById('global-error');
+      display.style.display = 'block';
+      display.innerHTML += '<h3>Unhandled Promise Rejection:</h3><pre>' + event.reason + '</pre>';
+    });
+  </script>
+  <header class="header">
+    <div class="header-left">
+      <a href="./index.html"><img src="logo.png" alt="ZeroVault logo for the offline password manager project" class="logo" /></a>
+      <h1>ZeroVault App</h1>
+    </div>
+
+    <div class="header-right">
+      <nav class="header-nav" aria-label="Primary">
+        <a href="./index.html">Home</a>
+        <a href="./app.html" class="active">Open App</a>
+        <a href="./getting-started.html">Getting Started</a>
+        <a href="./security.html">Security</a>
+        <a href="./backup-recovery.html">Backup & Recovery</a>
+        <a href="./import-guide.html">Import Guide</a>
+        <a href="./faq.html">FAQ</a>
+      </nav>
+      <div class="header-actions">
+        <button id="lockBtn" class="secondary" disabled>Lock</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container docs-layout">
+    <section class="card">
+      <h2>ZeroVault Web App</h2>
+      <p class="notice">This is the interactive offline password vault. If you want product details, search-friendly content, or setup guides, use the documentation links above or return to the homepage.</p>
+      <div class="actions wrap">
+        <a class="button-link" href="./index.html">Back to Home</a>
+        <a class="button-link" href="./getting-started.html">Getting Started</a>
+        <a class="button-link" href="./backup-recovery.html">Backup Guide</a>
+      </div>
+    </section>
+    <section class="card">
+      <div id="app" tabindex="-1" aria-label="ZeroVault application"></div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <nav class="footer-nav" aria-label="Footer">
+      <a href="./index.html">Home</a>
+      <a href="./app.html">Open App</a>
+      <a href="./getting-started.html">Getting Started</a>
+      <a href="./security.html">Security</a>
+      <a href="./backup-recovery.html">Backup & Recovery</a>
+      <a href="./import-guide.html">Import Guide</a>
+      <a href="./faq.html">FAQ</a>
+      <a href="./offline-password-manager.html">Offline Guide</a>
+      <a href="./client-side-password-manager.html">Client-Side Guide</a>
+    </nav>
+    <small>Offline-capable. No servers. No storage. Download your encrypted vault JSON after changes.</small>
+  </footer>
+
+  <script src="src/qrcode.js"></script>
+  <script src="src/argon2-adapter.js"></script>
+  <script type="module" src="src/app.js"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", function () {
+        navigator.serviceWorker.register("./service-worker.js").then(function (registration) {
+          if (registration.waiting) {
+            window.__zerovaultUpdateReady = true;
+            window.dispatchEvent(new CustomEvent("zerovault-update-ready"));
+          }
+          registration.addEventListener("updatefound", function () {
+            var worker = registration.installing;
+            if (!worker) return;
+            worker.addEventListener("statechange", function () {
+              if (worker.state === "installed" && navigator.serviceWorker.controller) {
+                window.__zerovaultUpdateReady = true;
+                window.dispatchEvent(new CustomEvent("zerovault-update-ready"));
+              }
+            });
+          });
+        }).catch(function () {});
+      });
+    }
+  </script>
+</body>
+
+</html>

@@ -1,12 +1,19 @@
-const CACHE_NAME = "zerovault-static-v2";
+const CACHE_NAME = "zerovault-static-v4";
 const ASSETS = [
   "./",
   "./index.html",
+  "./app.html",
   "./getting-started.html",
   "./security.html",
   "./backup-recovery.html",
   "./import-guide.html",
   "./faq.html",
+  "./marketing-copy.html",
+  "./presentation-summary.html",
+  "./offline-password-manager.html",
+  "./client-side-password-manager.html",
+  "./changelog.html",
+  "./troubleshooting.html",
   "./styles.css",
   "./src/app.js",
   "./src/ui.js",
