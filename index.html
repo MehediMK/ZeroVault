@@ -7,9 +7,10 @@
 
   <meta http-equiv="Content-Security-Policy" content="
         default-src 'self';
-        script-src 'self' 'unsafe-inline';
+        script-src 'self' 'unsafe-inline' https://www.googletagmanager.com;
         style-src 'self' 'unsafe-inline';
-        img-src 'self' data:;
+        connect-src 'self' https://www.google-analytics.com https://region1.google-analytics.com https://www.googletagmanager.com;
+        img-src 'self' data: https://www.google-analytics.com https://www.googletagmanager.com;
         object-src 'none';
         base-uri 'none';
         form-action 'self';
@@ -69,6 +70,13 @@
       "name": "ZeroVault",
       "url": "https://mehedimk.github.io/ZeroVault/"
     }
+  </script>
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-GKWHTWD2LG"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag() { dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', 'G-GKWHTWD2LG');
   </script>
 
   <link rel="stylesheet" href="styles.css" />
