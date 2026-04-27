@@ -559,7 +559,7 @@ export function getSearchValues() {
 export function renderQRModal(chunks, index, total, handlers) {
   let overlay = document.getElementById("qr-overlay");
   if (!overlay) {
-    overlay = el("div", { id: "qr-overlay", style: "position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;" });
+    overlay = el("div", { id: "qr-overlay", style: "position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;" });
     document.body.appendChild(overlay);
   }
   overlay.innerHTML = "";
@@ -577,7 +577,7 @@ export function renderQRModal(chunks, index, total, handlers) {
   } catch (error) {
     qrHtml = `<p class="error">${error.message}</p>`;
   }
-  overlay.appendChild(el("div", { class: "card", style: "max-width: 520px; text-align:center; background:#fff; color:#111;" }, [
+  overlay.appendChild(el("div", { class: "card qr-dialog" }, [
     el("h2", { text: `Mobile Transfer (${index + 1}/${total})` }),
     el("p", { text: "Scan each code in order on another ZeroVault-compatible device." }),
     el("div", { html: qrHtml, style: "margin: 20px 0;" }),

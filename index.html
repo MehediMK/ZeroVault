@@ -79,6 +79,7 @@
     gtag('config', 'G-GKWHTWD2LG');
   </script>
 
+  <script src="src/theme.js"></script>
   <link rel="stylesheet" href="styles.css" />
   <link rel="icon" href="favicon.png" sizes="16x16" type="image/png" />
   <link rel="apple-touch-icon" href="apple-touch-icon.png" sizes="180x180" />
@@ -87,7 +88,7 @@
 
 <body>
   <a class="skip-link" href="#content">Skip to content</a>
-  <div id="global-error" style="display:none; color:red; padding:20px; background:#fff; border:2px solid red;"></div>
+  <div id="global-error" class="global-error"></div>
   <script>
     window.addEventListener('error', function (event) {
       var display = document.getElementById('global-error');
