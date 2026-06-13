@@ -2,7 +2,7 @@
 ### Offline Client-Side Password Manager (Encrypted JSON)
 
 **ZeroVault** is a **secure, offline, client-side password manager** that runs entirely in your browser.  
-All Credentials are encrypted locally and stored only in a **user-controlled encrypted JSON file**.
+All credentials are encrypted locally and stored only in a **user-controlled encrypted JSON file**.
 
 > ✅ No servers  
 > ✅ No cloud  
